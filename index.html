@@ -1,0 +1,1358 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>freebuff-map</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#1976d2" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="#1976d2" />
+    <link rel="manifest" href="./manifest.json" />
+
+    <!-- Styles des nouvelles vues (compte, espace dev, admin, paiement) -->
+    <style>
+      .fb-btn { display: block; width: 100%; box-sizing: border-box; margin: 8px 0; padding: 12px;
+        background: #e5e4e7; color: #333; border: none; border-radius: 20px; font-size: 14px;
+        font-weight: 500; cursor: pointer; text-align: left; transition: filter .2s, background .2s; font-family: inherit; }
+      .fb-btn:hover { filter: brightness(0.96); }
+      .fb-btn:disabled { opacity: .65; cursor: default; }
+      .fb-btn-primary { background: #1976d2; color: #fff; text-align: center; }
+      .fb-btn-premium { background: #fff8e1; color: #8a6d00; border: 1px solid #ffd54f; }
+      .fb-btn-admin { background: #263238; color: #fff; }
+      .fb-btn-light { background: #f1f2f6; color: #333; }
+      .fb-back { margin: 0 0 12px 0; padding: 8px 14px; background: #e5e4e7; color: #333;
+        border: none; border-radius: 16px; font-size: 13px; cursor: pointer; font-family: inherit; }
+      .fb-card { background: #fff; border: 1px solid #e5e4e7; border-radius: 12px; padding: 16px;
+        margin: 12px 0; text-align: left; }
+      .fb-label { display: block; margin: 10px 0 4px 0; font-size: 13px; font-weight: 500; color: #333; }
+      .fb-input { width: 100%; box-sizing: border-box; padding: 10px 12px; font-size: 14px;
+        border: 1px solid #d7d7de; border-radius: 10px; outline: none; font-family: inherit; background: #fff; }
+      .fb-input:focus { border-color: #1976d2; }
+      .fb-muted { color: #6b6375; font-size: 13px; }
+      .fb-tabs { display: flex; gap: 8px; margin: 4px 0 12px 0; }
+      .fb-tab { flex: 1; padding: 10px; font-size: 14px; border: 1px solid #e5e4e7; background: #f6f6f8;
+        color: #555; border-radius: 10px; cursor: pointer; font-family: inherit; }
+      .fb-tab.is-active { background: #1976d2; border-color: #1976d2; color: #fff; font-weight: 600; }
+      .fb-message { display: none; margin: 8px 0; padding: 10px 12px; border-radius: 10px;
+        font-size: 13px; text-align: left; }
+      .fb-message.is-error { display: block; background: #ffebee; color: #b71c1c; }
+      .fb-message.is-success { display: block; background: #e8f5e9; color: #1b5e20; }
+      .fb-offers { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-top: 12px; }
+      .fb-offer { flex: 1 1 220px; background: #fff; border: 1px solid #e5e4e7; border-radius: 14px;
+        padding: 16px; text-align: center; }
+      .fb-offer-best { border-color: #ffd54f; box-shadow: 0 4px 14px rgba(255, 213, 79, .25); }
+      .fb-price { font-size: 22px; font-weight: 700; margin: 4px 0 10px 0; color: #1976d2; }
+      .fb-list { text-align: left; margin: 0 0 12px 0; padding-left: 18px; font-size: 13px; color: #444; }
+      .fb-list li { margin: 4px 0; }
+      .fb-app { background: #fff; border: 1px solid #e5e4e7; border-radius: 12px; padding: 12px;
+        margin: 10px 0; text-align: left; }
+      .fb-app-head { display: flex; align-items: center; gap: 10px; }
+      .fb-app-icon { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; background: #f1f2f6; flex: 0 0 auto; }
+      .fb-app-title { font-size: 15px; font-weight: 600; }
+      .fb-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+      .fb-badge-attente { background: #fff3e0; color: #e65100; }
+      .fb-badge-approuvee { background: #e8f5e9; color: #2e7d32; }
+      .fb-badge-rejetee { background: #ffebee; color: #c62828; }
+      .fb-app-actions { display: flex; gap: 8px; margin-top: 10px; }
+      .fb-app-actions button { flex: 1; padding: 8px; font-size: 13px; border: none; border-radius: 8px;
+        cursor: pointer; font-family: inherit; }
+      .fb-approve { background: #2e7d32; color: #fff; }
+      .fb-reject { background: #c62828; color: #fff; }
+
+      /* Marketplace */
+      .fb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+      .fb-app-card { background: #fff; border: 1px solid #e5e4e7; border-radius: 14px; padding: 14px;
+        text-align: left; display: flex; flex-direction: column; gap: 8px; }
+      .fb-app-card-icon { width: 48px; height: 48px; border-radius: 10px; background: #f1f2f6;
+        display: flex; align-items: center; justify-content: center; font-size: 24px; overflow: hidden; }
+      .fb-app-card-icon img { width: 100%; height: 100%; object-fit: cover; }
+      .fb-app-card-title { margin: 0; font-size: 15px; }
+      .fb-app-card-desc { margin: 0; font-size: 13px; color: #6b6375; flex: 1; }
+
+      /* Onboarding */
+      #onboarding-overlay [data-onboarding-dot] { transition: background .2s; }
+      #onboarding-overlay [data-onboarding-dot].is-active { background: #1976d2 !important; }
+
+      /* ==================================================================
+         Séparation carte / fenêtres : la carte reste un calque de fond,
+         chaque vue est une fenêtre opaque au-dessus.
+         ================================================================== */
+      body { background: #ffffff; }
+
+      /* ==================================================================
+         Structure flexbox : barre du haut → vues → barre du bas.
+         #bottom-nav précède #views dans le HTML : `order` rétablit
+         l'ordre visuel sans déplacer de bloc.
+         ================================================================== */
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+      }
+
+      body {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 100vw;
+        overflow: hidden;
+        background: #ffffff;
+      }
+
+      #top-bar {
+        order: 1;
+        flex-shrink: 0;
+        position: static !important;
+        top: auto !important;
+        right: auto !important;
+      }
+
+      #views {
+        order: 2;
+        flex: 1;
+        position: relative;
+        overflow: hidden;
+        width: 100%;
+        height: auto !important;
+        margin-bottom: 0 !important;
+      }
+
+      #bottom-nav {
+        order: 3;
+        position: static !important;
+        bottom: auto !important;
+        height: 60px !important;
+        flex-shrink: 0;
+        display: flex;
+        justify-content: space-around;
+        align-items: center;
+        background: #ffffff;
+        z-index: 9999;
+        border-top: 1px solid #e5e4e7;
+        padding: 0 !important;
+      }
+
+      /* Les 5 boutons tiennent dans les 60px de la barre */
+      #bottom-nav button {
+        height: 100%;
+        min-height: 0 !important;
+        padding: 4px 0 !important;
+        font-size: 12px !important;
+      }
+
+      /* Boutons flottants au-dessus de la carte (z-index 10) */
+      #search-bar {
+        position: absolute !important;
+        top: 20px !important;
+        left: 20px !important;
+        right: 20px !important;
+        z-index: 10 !important;
+      }
+
+      /* Panneau planificateur d'itineraire (carte blanche flottante) */
+      #route-panel {
+        position: absolute !important;
+        top: 20px !important;
+        left: 20px !important;
+        right: 20px !important;
+        z-index: 10 !important;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 12px;
+        background: #ffffff;
+        border-radius: 14px;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+      }
+
+      #route-panel .route-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      #route-panel .route-dot {
+        flex: 0 0 auto;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
+
+      #route-panel .route-dot--start { background: #1976d2; }
+      #route-panel .route-dot--end { background: #e8590c; }
+
+      #route-panel input {
+        flex: 1;
+        min-width: 0;
+        padding: 10px 12px;
+        font-size: 15px;
+        border: 1px solid #e5e4e7;
+        border-radius: 10px;
+        outline: none;
+      }
+
+      #route-panel input:focus {
+        border-color: #1976d2;
+      }
+
+      #btn-swap {
+        flex: 0 0 auto;
+        width: 36px;
+        height: 36px;
+        padding: 0;
+        font-size: 16px;
+        line-height: 1;
+        background: #f4f4f6;
+        color: #1976d2;
+        border: none;
+        border-radius: 50%;
+        cursor: pointer;
+      }
+
+      #btn-route {
+        padding: 11px 16px;
+        font-size: 15px;
+        font-weight: 600;
+        background: #1976d2;
+        color: #ffffff;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+      }
+
+      #btn-route:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+
+      /* Bottom sheet des itineraires (glisse depuis le bas) */
+      #route-sheet {
+        position: fixed !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        z-index: 30 !important;
+        /* Hauteur par defaut : 50 % de l'ecran (mobile comme desktop). */
+        box-sizing: border-box;
+        height: 50vh;
+        display: flex;
+        flex-direction: column;
+        padding: 8px 12px 16px;
+        background: #ffffff;
+        border-radius: 18px 18px 0 0;
+        box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.2);
+        transform: translateY(100%);
+        transition: transform 0.28s ease, height 0.22s ease;
+      }
+
+      #route-sheet.open {
+        transform: translateY(0);
+      }
+
+      /* Pendant un glissement : pas de transition, la hauteur suit le doigt. */
+      #route-sheet.dragging {
+        transition: none;
+      }
+
+      #route-sheet .sheet-handle,
+      #route-sheet .sheet-head {
+        touch-action: none;
+        user-select: none;
+        cursor: grab;
+      }
+
+      #route-sheet.dragging .sheet-head {
+        cursor: grabbing;
+      }
+
+      #route-sheet .sheet-handle {
+        width: 44px;
+        height: 4px;
+        margin: 2px auto 8px;
+        background: #d6d6dc;
+        border-radius: 2px;
+      }
+
+      #route-sheet .sheet-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 0 4px 8px;
+        font-size: 15px;
+        color: #1c1c1e;
+      }
+
+      #route-sheet-close {
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        background: #f4f4f6;
+        color: #4a4a4f;
+        border: none;
+        border-radius: 50%;
+        cursor: pointer;
+      }
+
+      #route-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+      }
+
+      .route-card {
+        position: relative;
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        padding: 14px 12px;
+        text-align: left;
+        background: #ffffff;
+        border: 1px solid #ececf0;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        cursor: pointer;
+      }
+
+      .route-card.active {
+        border-color: #1976d2;
+        background: #eef3fb;
+      }
+
+      .route-card-icon {
+        font-size: 22px;
+        line-height: 1;
+      }
+
+      .route-card-body {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+      }
+
+      .route-card-title {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        color: #1c1c1e;
+      }
+
+      .route-card-duration {
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: #111111;
+      }
+
+      .route-card-distance {
+        font-size: 12px;
+        color: #6b6b70;
+      }
+
+      .route-card-steps {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 4px;
+        font-size: 13px;
+        color: #4a4a4f;
+      }
+
+      .route-step {
+        white-space: nowrap;
+      }
+
+      .route-arrow {
+        font-size: 11px;
+        color: #9b9ba1;
+      }
+
+      .route-card-badge {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        padding: 2px 8px;
+        font-size: 11px;
+        font-weight: 600;
+        color: #1e7b34;
+        background: #e6f4ea;
+        border-radius: 999px;
+      }
+
+      #filter-bar {
+        position: absolute !important;
+        top: 196px !important;
+        left: 20px !important;
+        right: 20px !important;
+        z-index: 10 !important;
+      }
+
+      #position-btn {
+        position: absolute !important;
+        top: 132px !important;
+        right: 20px !important;
+        left: auto !important;
+        z-index: 10 !important;
+        margin: 0 !important;
+      }
+
+      #microphone-container {
+        position: absolute !important;
+        bottom: 20px !important;
+        right: 20px !important;
+        z-index: 10 !important;
+      }
+
+      /* La carte occupe toute la zone des vues */
+      #view-carte {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        padding: 0 !important;
+        background: #ffffff;
+        overflow: hidden;
+      }
+
+      #map {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1;
+      }
+
+      /* Chaque vue = une vraie fenêtre blanche et opaque, au-dessus de la carte */
+      #view-profil,
+      #view-auth,
+      #view-developer,
+      #view-payment,
+      #view-admin,
+      #view-decouvrir,
+      #view-scanner,
+      #view-comparateur {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: #ffffff;
+        z-index: 5;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        box-sizing: border-box;
+        padding: 20px;
+        padding-bottom: 80px !important;
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      /* Profil = fenêtre Paramètres : lisibilité et espacement */
+      #view-profil { color: #222222; line-height: 1.45; }
+      #view-profil h2 { margin: 4px 0 10px 0; font-size: 20px; }
+      #view-profil p { margin-bottom: 8px; }
+      #view-profil button { margin-bottom: 12px !important; }
+
+      /* Bouton Retour : visible et collant en haut de la fenêtre */
+      .fb-back {
+        position: sticky;
+        top: 0;
+        z-index: 3;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin: 0 0 12px 0;
+        padding: 8px 14px;
+        background: #eef3fb;
+        color: #1976d2;
+        border: 1px solid #c7d7ee;
+        border-radius: 999px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .fb-back:hover { background: #e2ebf9; }
+    </style>
+
+    <!-- App CSS will be injected by main.js -->
+  </head>
+  <body>
+    <!-- Top Bar with Voice Toggle -->
+    <div id="top-bar" style="
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 100%;
+      background: white;
+      padding: 8px 12px;
+      border-bottom: 1px solid #e5e4e7;
+      z-index: 1000;
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      font-size: 0;
+    ">
+      <button
+        id="voice-toggle-btn"
+        style="
+          width: 36px;
+          height: 36px;
+          background: white;
+          border: 2px solid #e5e4e7;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: border-color 0.2s, background 0.2s;
+          pointer-events: auto;
+        "
+        aria-label="Activer/désactiver la voix"
+      >
+        <span style="font-size: 18px;">🔊</span>
+      </button>
+    </div>
+
+    <!-- Bottom Navigation Bar -->
+    <div id="bottom-nav" style="
+      position: fixed;
+      bottom: 0;
+      width: 100%;
+      background: white;
+      border-top: 1px solid #e5e4e7;
+      padding: 6px 0;
+      display: flex;
+      justify-content: space-around;
+      z-index: 100;
+      font-size: 0; /* remove whitespace between flex items */
+    ">
+      <button data-tab="carte" style="
+        width: 25%;
+        padding: 12px 0;
+        font-size: 16px;
+        background: none;
+        border: none;
+        color: #6b6375;
+        cursor: pointer;
+        flex: 1;
+        min-height: 44px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        transition: color 0.2s;
+      ">
+        <span style="font-size: 24px;">🗺️</span>
+        <span>Carte</span>
+      </button>
+      <button data-tab="scanner" style="
+        width: 25%;
+        padding: 12px 0;
+        font-size: 16px;
+        background: none;
+        border: none;
+        color: #6b6375;
+        cursor: pointer;
+        flex: 1;
+        min-height: 44px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        transition: color 0.2s;
+      ">
+        <span style="font-size: 24px;">📱</span>
+        <span>Scanner</span>
+      </button>
+      <button data-tab="comparateur" style="
+        width: 25%;
+        padding: 12px 0;
+        font-size: 16px;
+        background: none;
+        border: none;
+        color: #6b6375;
+        cursor: pointer;
+        flex: 1;
+        min-height: 44px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        transition: color 0.2s;
+      ">
+        <span style="font-size: 24px;">📊</span>
+        <span>Comparateur</span>
+      </button>
+      <button data-tab="decouvrir" style="
+        width: 20%;
+        padding: 12px 0;
+        font-size: 16px;
+        background: none;
+        border: none;
+        color: #6b6375;
+        cursor: pointer;
+        flex: 1;
+        min-height: 44px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        transition: color 0.2s;
+      ">
+        <span style="font-size: 24px;">✨</span>
+        <span>Découvrir</span>
+      </button>
+      <button data-tab="profil" style="
+        width: 25%;
+        padding: 12px 0;
+        font-size: 16px;
+        background: none;
+        border: none;
+        color: #6b6375;
+        cursor: pointer;
+        flex: 1;
+        min-height: 44px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        transition: color 0.2s;
+      ">
+        <span style="font-size: 24px;">👤</span>
+        <span>Profil</span>
+      </button>
+    </div>
+
+    <!-- Content Views -->
+    <div id="views" style="margin-bottom: 56px; height: 100vh;">
+      <!-- Carte view: contains the map -->
+      <div id="view-carte" data-view="carte" style="display: block; padding: 0;">
+        <!-- Search bar -->
+        <!-- Planificateur d'itineraire (facon Citymapper) -->
+        <div id="route-panel">
+          <div class="route-row">
+            <span class="route-dot route-dot--start" aria-hidden="true"></span>
+            <input id="input-depart" type="text" placeholder="Ma position" autocomplete="off" aria-label="Depart" />
+            <button id="btn-swap" type="button" title="Inverser depart et arrivee" aria-label="Inverser depart et arrivee">⇅</button>
+          </div>
+          <div class="route-row">
+            <span class="route-dot route-dot--end" aria-hidden="true"></span>
+            <input id="input-arrivee" type="text" placeholder="Où allez-vous ?" autocomplete="off" aria-label="Arrivee" />
+          </div>
+          <button id="btn-route" type="button">Rechercher un itinéraire</button>
+        </div>
+
+        <!-- Bottom sheet : listes des itineraires calcules -->
+        <div id="route-sheet" aria-hidden="true">
+          <div class="sheet-handle" aria-hidden="true"></div>
+          <div class="sheet-head">
+            <strong id="route-sheet-title">Itinéraires</strong>
+            <button id="route-sheet-close" type="button" aria-label="Fermer">✕</button>
+          </div>
+          <div id="route-list"></div>
+        </div>
+
+        <!-- Ancienne barre de recherche : masquee au profit du planificateur -->
+        <div id="search-bar" style="position: fixed; top: 80px; left: 10px; right: 10px; z-index: 50; display: none; gap: 8px;">
+          <input
+            type="text"
+            id="search-input"
+            style="
+              flex: 1;
+              padding: 10px 16px;
+              font-size: 16px;
+              border: 2px solid #e5e4e7;
+              border-radius: 20px;
+              outline: none;
+              transition: border-color 0.2s;
+            "
+            placeholder="Rechercher un lieu (ex: pharmacie)"
+          />
+          <button
+            id="search-btn"
+            style="
+              padding: 0 20px;
+              font-size: 16px;
+              background: #1976d2;
+              color: white;
+              border: none;
+              border-radius: 20px;
+              cursor: pointer;
+              white-space: nowrap;
+              transition: background 0.2s;
+            "
+          >
+            Recherche
+          </button>
+        </div>
+
+        <!-- Filter buttons row -->
+        <div id="filter-bar" style="
+          position: fixed;
+          top: 110px;
+          left: 10px;
+          right: 10px;
+          z-index: 50;
+          display: flex;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+          gap: 8px;
+          padding-bottom: 4px;
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+        ">
+          <style>
+            #filter-bar::-webkit-scrollbar {
+              display: none;
+            }
+            /* Catégorie sélectionnée : bordure bleue + fond léger.
+               !important car les boutons portent des styles inline. */
+            #filter-bar .filter-btn.active {
+              background: #eef3fb !important;
+              border-color: #1976d2 !important;
+              color: #1976d2 !important;
+              font-weight: 600;
+              box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.18);
+            }
+            #filter-bar .filter-btn {
+              pointer-events: auto;
+            }
+          </style>
+          
+          <button
+            class="filter-btn"
+            data-filter="shop=supermarket"
+            data-category="shop=supermarket"
+            aria-pressed="false"
+            style="
+              flex: 0 0 auto;
+              padding: 8px 12px;
+              font-size: 13px;
+              background: #f0f0f0;
+              border: 1px solid #ddd;
+              border-radius: 20px;
+              color: #666;
+              cursor: pointer;
+              white-space: nowrap;
+              transition: all 0.2s;
+            ">
+            Alimentation
+          </button>
+          <button
+            class="filter-btn"
+            data-filter="amenity=pharmacy"
+            data-category="amenity=pharmacy"
+            aria-pressed="false"
+            style="
+              flex: 0 0 auto;
+              padding: 8px 12px;
+              font-size: 13px;
+              background: #f0f0f0;
+              border: 1px solid #ddd;
+              border-radius: 20px;
+              color: #666;
+              cursor: pointer;
+              white-space: nowrap;
+              transition: all 0.2s;
+            ">
+            Santé
+          </button>
+          <button
+            class="filter-btn"
+            data-filter="shop=beauty"
+            data-category="shop=beauty"
+            aria-pressed="false"
+            style="
+              flex: 0 0 auto;
+              padding: 8px 12px;
+              font-size: 13px;
+              background: #f0f0f0;
+              border: 1px solid #ddd;
+              border-radius: 20px;
+              color: #666;
+              cursor: pointer;
+              white-space: nowrap;
+              transition: all 0.2s;
+            ">
+            Beauté
+          </button>
+          <button
+            class="filter-btn"
+            data-filter="shop=clothes"
+            data-category="shop=clothes"
+            aria-pressed="false"
+            style="
+              flex: 0 0 auto;
+              padding: 8px 12px;
+              font-size: 13px;
+              background: #f0f0f0;
+              border: 1px solid #ddd;
+              border-radius: 20px;
+              color: #666;
+              cursor: pointer;
+              white-space: nowrap;
+              transition: all 0.2s;
+            ">
+            Vêtements
+          </button>
+          <button
+            class="filter-btn"
+            data-filter="amenity=restaurant"
+            data-category="amenity=restaurant"
+            aria-pressed="false"
+            style="
+              flex: 0 0 auto;
+              padding: 8px 12px;
+              font-size: 13px;
+              background: #f0f0f0;
+              border: 1px solid #ddd;
+              border-radius: 20px;
+              color: #666;
+              cursor: pointer;
+              white-space: nowrap;
+              transition: all 0.2s;
+            ">
+            Restauration
+          </button>
+          <button
+            id="clear-filter-btn"
+            style="
+              flex: 0 0 auto;
+              padding: 8px 12px;
+              font-size: 13px;
+              background: #fff;
+              border: 1px solid #1976d2;
+              border-radius: 20px;
+              color: #1976d2;
+              cursor: pointer;
+              white-space: nowrap;
+              margin-left: 8px;
+              font-weight: 500;
+              transition: all 0.2s;
+            ">
+            Effacer
+          </button>
+        </div>
+
+        <!-- Map container -->
+        <div id="map" style="width: 100%; height: 100%; position: relative;"></div>
+        <!-- Ma position button will be injected by JS -->
+        
+        <!-- Microphone floating button -->
+        <div id="microphone-container" style="
+          position: fixed;
+          bottom: 80px;
+          right: 20px;
+          z-index: 100;
+          pointer-events: none;
+        ">
+          <button
+            id="microphone-btn"
+            style="
+              width: 56px;
+              height: 56px;
+              background: white;
+              border: 2px solid #e5e4e7;
+              border-radius: 50%;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              pointer-events: auto;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+              transition: background 0.2s, border-color 0.2s;
+            "
+            aria-label="Recherche vocale"
+          >
+            <span style="font-size: 24px; pointer-events: none;">🎤</span>
+          </button>
+          <div id="speech-bubble" style="
+            position: absolute;
+            bottom: 70px;
+            right: 0;
+            background: #1976d2;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 12px;
+            font-size: 13px;
+            max-width: 180px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+          ">
+            Écoute...
+          </div>
+        </div>
+      </div>
+
+      <!-- Scanner view -->
+      <div id="view-scanner" data-view="scanner" style="display: none; padding: 20px; text-align: center;">
+        <h2>Scanner un produit</h2>
+        <p>Point your camera at a product barcode</p>
+        <div id="reader" style="width: 100%; max-width: 500px; margin: 0 auto;"></div>
+        <button id="start-scan-btn" style="padding: 12px 24px; font-size: 16px; background: #1976d2; color: white; border: none; border-radius: 8px; cursor: pointer; margin: 20px auto;">📷 Scanner un produit</button>
+        <div id="product-result"></div>
+        <button id="close-scanner" style="padding: 8px 16px; font-size: 14px; background: #e5e4e7; color: #333; border: none; border-radius: 4px; cursor: pointer; display: none; margin: 10px auto;">Fermer</button>
+        <p id="scan-result" style="margin: 10px; color: #6b6375; font-size: 14px;" aria-live="polite"></p>
+      </div>
+
+      <!-- Comparateur view -->
+      <div id="view-comparateur" data-view="comparateur" style="display: none; padding: 20px; text-align: center;">
+        <h2>Comparateur de prix</h2>
+        <p>Recherchez un produit pour comparer les prix sur Amazon</p>
+        <div id="comparateur-search-bar" style="position: fixed; top: 80px; left: 10px; right: 10px; z-index: 50; display: flex; gap: 8px;">
+          <input
+            type="text"
+            id="comparateur-input"
+            style="
+              flex: 1;
+              padding: 10px 16px;
+              font-size: 16px;
+              border: 2px solid #e5e4e7;
+              border-radius: 20px;
+              outline: none;
+              transition: border-color 0.2s;
+            "
+            placeholder="Rechercher un produit"
+          />
+          <div style="margin-top: 12px; display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+            <label style="margin-right: 20px; font-size: 13px;">
+              <input type="radio" name="priority" value="prix" style="margin-right: 4px;">
+              Prix (0.8/0.2)
+            </label>
+            <label style="margin-right: 20px; font-size: 13px;">
+              <input type="radio" name="priority" value="equilibre" checked style="margin-right: 4px;">
+              Équilibré (0.6/0.4)
+            </label>
+            <label style="font-size: 13px;">
+              <input type="radio" name="priority" value="proximite" style="margin-right: 4px;">
+              Proximité (0.3/0.7)
+            </label>
+          </div>
+          <button
+            id="comparateur-btn"
+            style="
+              padding: 0 20px;
+              font-size: 16px;
+              background: #1976d2;
+              color: white;
+              border: none;
+              border-radius: 20px;
+              cursor: pointer;
+              white-space: nowrap;
+              transition: background 0.2s;
+            "
+          >
+            Recherche
+          </button>
+        </div>
+        <!-- Tri des offres : la priorité (radio) correspond à « Pertinence » -->
+        <div id="deal-sort-bar" style="margin-top: 100px; display: flex; justify-content: center; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <label for="deal-sort" style="font-size: 13px; color: #6b6375;">Trier par</label>
+          <select
+            id="deal-sort"
+            style="
+              padding: 8px 12px;
+              font-size: 14px;
+              border: 2px solid #e5e4e7;
+              border-radius: 20px;
+              background: #fff;
+              color: #111;
+              cursor: pointer;
+            "
+          >
+            <option value="discount" selected>Réduction max</option>
+            <option value="price">Prix le plus bas</option>
+            <option value="distance">Plus proche</option>
+            <option value="score">Pertinence (priorité)</option>
+          </select>
+        </div>
+        <div id="comparateur-results" style="margin-top: 12px; max-height: 400px; overflow-y: auto;"></div>
+      </div>
+
+      <!-- Profil view -->
+      <div id="view-profil" data-view="profil" style="display: none; padding: 20px; text-align: center;">
+        <h2 style="margin: 4px 0 8px 0;">⚙️ Paramètres</h2>
+        <p>Bienvenue sur freebuff-map !</p>
+        <div style="margin: 20px 0; text-align: left; max-width: 300px; margin-left: auto; margin-right: auto;">
+          <button id="mentions-legales-btn" style="
+            width: 100%;
+            padding: 12px;
+            background: #e5e4e7;
+            color: #333;
+            border: none;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            margin: 8px 0;
+            text-align: left;
+          "
+          >
+            Mentions légales
+          </button>
+        </div>
+
+        <!-- Compte, espace développeur et abonnement -->
+        <div id="profile-account" style="margin: 0 auto 8px auto; max-width: 300px; text-align: left;">
+          <div id="app-logo" title="freebuff-map" style="
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            margin-bottom: 10px;
+            background: #eef3fb;
+            border: 1px dashed #c7d7ee;
+            border-radius: 16px;
+            font-size: 15px;
+            font-weight: 600;
+            color: #1976d2;
+            cursor: pointer;
+            user-select: none;
+            -webkit-user-select: none;
+          ">
+            <span style="font-size: 22px;">🗺️</span>
+            <span>freebuff-map</span>
+          </div>
+
+          <p id="profile-user-name" style="margin: 0 0 8px 0; font-size: 14px; color: #333; display: none;"></p>
+
+          <button id="btn-nav-dev" class="fb-btn fb-btn-light">💻 Espace Développeur</button>
+          <button id="btn-nav-auth" class="fb-btn fb-btn-light">👤 Se connecter / S'inscrire</button>
+          <button id="btn-nav-payment" class="fb-btn fb-btn-premium">⭐ Passer Premium</button>
+          <button id="btn-nav-admin" class="fb-btn fb-btn-admin" style="display:none;">🛡️ Panneau Admin</button>
+          <button id="btn-logout" class="fb-btn fb-btn-light" style="display:none;">🚪 Se déconnecter</button>
+        </div>
+        <div id="offline-banner" style="
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          background: #f57c00;
+          color: white;
+          padding: 8px 16px;
+          font-size: 14px;
+          font-weight: 500;
+          z-index: 9999;
+          display: none;
+          text-align: center;
+        ">
+          Mode hors ligne - Les tuiles sont en cache
+          <button id="offline-close-btn" style="margin-left: 12px; background: white; color: #e74c3c; border: none; padding: 4px 8px; border-radius: 4px; font-size: 12px;">×</button>
+        </div>
+        <button id="install-btn" style="
+          margin: 20px auto 0 auto;
+          padding: 12px 24px;
+          background: #42b72a;
+          color: white;
+          border: none;
+          border-radius: 24px;
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: background 0.2s;
+          display: none;
+        ">
+          📲 Installer l'app
+        </button>
+        <button id="download-zone-btn" style="margin: 8px auto 0 auto; padding: 10px 20px; background: #1976d2; color: white; border: none; border-radius: 20px; font-size: 14px; font-weight: 500; cursor: pointer; transition: background 0.2s; display: block;">
+          📥 Télécharger la zone (5km)
+        </button>
+        <button id="export-data-btn" style="margin: 8px auto 0 auto; padding: 10px 20px; background: #ffc107; color: #111; border: none; border-radius: 20px; font-size: 14px; font-weight: 500; cursor: pointer; transition: background 0.2s;">
+          📤 Exporter mes données
+        </button>
+        <p id="installed-msg" style="margin: 12px 0 0 0; font-size: 12px; color: #666; display: none;">App installée ✅</p>
+        <p style="margin: 12px 0 0 0; font-size: 12px; color: #666;">Cache les tuiles OpenStreetMap d'une zone de 5km autour de votre position actuelle</p>
+      </div>
+
+      <!-- Espace développeur -->
+      <div id="view-developer" data-view="developer" style="display: none; padding: 20px; max-width: 520px; margin: 0 auto;">
+        <button class="fb-back" data-back="profil">← Retour</button>
+        <h2 style="margin: 8px 0 4px 0;">💻 Espace Développeur</h2>
+        <p class="fb-muted">Soumettez votre application : elle sera examinée par un administrateur.</p>
+
+        <div class="fb-card">
+          <label class="fb-label" for="dev-nom">Nom</label>
+          <input id="dev-nom" class="fb-input" type="text" placeholder="Ma super app" autocomplete="off" />
+
+          <label class="fb-label" for="dev-description">Description</label>
+          <textarea id="dev-description" class="fb-input" rows="3" placeholder="À quoi sert votre application ?"></textarea>
+
+          <label class="fb-label" for="dev-icon">URL de l'icône</label>
+          <input id="dev-icon" class="fb-input" type="url" placeholder="https://exemple.com/icone.png" autocomplete="off" />
+
+          <label class="fb-label" for="dev-categorie">Catégorie</label>
+          <select id="dev-categorie" class="fb-input">
+            <option value="Cartographie">Cartographie</option>
+            <option value="Alimentation">Alimentation</option>
+            <option value="Santé">Santé</option>
+            <option value="Shopping">Shopping</option>
+            <option value="Utilitaires">Utilitaires</option>
+            <option value="Autre">Autre</option>
+          </select>
+
+          <label class="fb-label" for="dev-url">Lien vers l'app</label>
+          <input id="dev-url" class="fb-input" type="url" placeholder="https://exemple.com" autocomplete="off" />
+
+          <button id="dev-submit" class="fb-btn fb-btn-primary" style="margin-top: 14px;">Soumettre</button>
+        </div>
+
+        <h3 style="margin: 22px 0 8px 0; font-size: 16px; text-align: left;">Mes applications</h3>
+        <div id="dev-apps-list"></div>
+      </div>
+
+      <!-- Connexion / Inscription -->
+      <div id="view-auth" data-view="auth" style="display: none; padding: 20px; max-width: 420px; margin: 0 auto;">
+        <button class="fb-back" data-back="profil">← Retour</button>
+        <h2 style="margin: 8px 0 12px 0;">👤 Mon compte</h2>
+
+        <div class="fb-tabs">
+          <button type="button" class="fb-tab is-active" data-auth-tab="login">Connexion</button>
+          <button type="button" class="fb-tab" data-auth-tab="signup">Inscription</button>
+        </div>
+
+        <div id="auth-message" class="fb-message" role="alert"></div>
+
+        <div id="auth-login-panel" class="fb-card">
+          <label class="fb-label" for="login-email">Email</label>
+          <input id="login-email" class="fb-input" type="email" autocomplete="username" placeholder="vous@exemple.com" />
+
+          <label class="fb-label" for="login-password">Mot de passe</label>
+          <input id="login-password" class="fb-input" type="password" autocomplete="current-password" placeholder="••••••••" />
+
+          <button id="auth-login-btn" class="fb-btn fb-btn-primary" style="margin-top: 14px;">Connexion</button>
+        </div>
+
+        <div id="auth-signup-panel" class="fb-card" style="display: none;">
+          <label class="fb-label" for="signup-nom">Nom</label>
+          <input id="signup-nom" class="fb-input" type="text" autocomplete="nickname" placeholder="Votre nom" />
+
+          <label class="fb-label" for="signup-email">Email</label>
+          <input id="signup-email" class="fb-input" type="email" autocomplete="email" placeholder="vous@exemple.com" />
+
+          <label class="fb-label" for="signup-password">Mot de passe</label>
+          <input id="signup-password" class="fb-input" type="password" autocomplete="new-password" placeholder="6 caractères minimum" />
+
+          <button id="auth-signup-btn" class="fb-btn fb-btn-primary" style="margin-top: 14px;">S'inscrire</button>
+        </div>
+
+        <p class="fb-muted" style="margin-top: 14px; font-size: 12px;">Compte local : vos identifiants restent stockés sur cet appareil.</p>
+      </div>
+
+      <!-- Paiement (aucune publicité, aucun lien affilié sur cette vue) -->
+      <div id="view-payment" data-view="payment" style="display: none; padding: 20px; max-width: 560px; margin: 0 auto;">
+        <button class="fb-back" data-back="profil">← Retour</button>
+        <h2 style="margin: 8px 0 4px 0;">⭐ Passer Premium</h2>
+        <p class="fb-muted">Un abonnement, rien d'autre : ni publicité, ni lien affilié sur cette page.</p>
+
+        <div class="fb-offers">
+          <div class="fb-offer">
+            <h3 style="margin: 0;">Mensuel</h3>
+            <p class="fb-price">4.99€ <span class="fb-muted" style="font-size: 13px; font-weight: 400;">/ mois</span></p>
+            <ul class="fb-list">
+              <li>Navigation hors-ligne illimitée</li>
+              <li>Recherche vocale prioritaire</li>
+              <li>Sans publicité</li>
+            </ul>
+            <button type="button" class="fb-btn fb-btn-primary" data-plan="mensuel">S'abonner</button>
+          </div>
+
+          <div class="fb-offer fb-offer-best">
+            <h3 style="margin: 0;">Annuel</h3>
+            <p class="fb-price">39.99€ <span class="fb-muted" style="font-size: 13px; font-weight: 400;">/ an</span></p>
+            <ul class="fb-list">
+              <li>Tout le plan mensuel</li>
+              <li>2 mois offerts</li>
+              <li>Sans publicité</li>
+            </ul>
+            <button type="button" class="fb-btn fb-btn-primary" data-plan="annuel">S'abonner</button>
+          </div>
+        </div>
+
+        <p class="fb-muted" style="font-size: 12px; margin-top: 16px;">Paiement simulé dans cette version : aucun débit réel n'est effectué.</p>
+      </div>
+
+      <!-- Panneau admin -->
+      <div id="view-admin" data-view="admin" style="display: none; padding: 20px; max-width: 640px; margin: 0 auto;">
+        <button class="fb-back" data-back="profil">← Retour</button>
+        <h2 style="margin: 8px 0 4px 0;">🛡️ Panneau Admin</h2>
+        <p class="fb-muted">Applications en attente de validation.</p>
+        <div id="admin-apps-list"></div>
+      </div>
+
+      <!-- Marketplace : applications approuvées -->
+      <div id="view-decouvrir" data-view="decouvrir" style="display: none; padding: 20px; max-width: 900px; margin: 0 auto;">
+        <h2 style="margin: 8px 0 4px 0;">✨ Découvrir</h2>
+        <p class="fb-muted">Les applications validées par l'équipe freebuff-map.</p>
+
+        <input
+          id="decouvrir-search"
+          class="fb-input"
+          type="search"
+          placeholder="Rechercher par nom ou catégorie"
+          autocomplete="off"
+          style="margin: 12px 0 16px 0;"
+        />
+
+        <div id="decouvrir-grid" class="fb-grid"></div>
+      </div>
+    </div>
+
+    <!-- Mentions légales view -->
+      <div id="view-mentions" data-view="mentions-legales" style="
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 100;
+        background: #ffffff;
+        overflow-y: auto;
+        padding: 40px 20px 80px 20px;
+        max-width: 800px;
+        margin: 0 auto;
+      ">
+        <button id="back-to-profil" style="
+          position: absolute;
+          top: 20px;
+          left: 20px;
+          padding: 8px 16px;
+          background: #e5e4e7;
+          color: #333;
+          border: none;
+          border-radius: 20px;
+          font-size: 14px;
+          cursor: pointer;
+        ">
+          Retour
+        </button>
+        <h1>Mentions légales</h1>
+        <div style="margin: 20px 0; padding: 20px; background: #f8f8f8; border-radius: 8px; min-height: 400px;">
+          <h2>Attribution OpenStreetMap</h2>
+          <p>Données cartographiques © <a href="https://www.openstreetmap.org/" style="color: #1976d2; text-decoration: underline;">OpenStreetMap</a> contributeurs, sous licence <a href="https://creativecommons.org/licenses/by-sa/2.0/" style="color: #1976d2; text-decoration: underline;">CC-BY-SA 2.0</a>.</p>
+          
+          <h2>Partenariat affilié</h2>
+          <p>Ce service utilise l'Amazon Associates Program. Certains liens vers des produits sur Amazon.fr sont des liens affiliés. Lorsque vous achetez via ces liens, nous percevons une commission sans frais supplémentaires pour vous.</p>
+          
+          <h2>⚠️ Information non médicale</h2>
+          <p>Les données proviennent d'Open Food Facts et ne remplacent pas l'avis d'un professionnel de santé.</p>
+          
+          <h2>Politique de confidentialité RGPD simplifiée</h2>
+          <p>Nous ne collectons pas de données personnelles identifiables. Les données suivantes sont stockées localement sur votre appareil :</p>
+          <ul style="text-align: left; margin: 16px 0; padding-left: 20px;">
+            <li>Historique de recherche dans IndexedDB (query, localisation, timestamp)</li>
+            <li>Données produit en cache (code-barres, informations produit)</li>
+            <li>Préférences utilisateur (paramètres voix, priorité comparateur)</li>
+          </ul>
+          <p>Vous pouvez supprimer ces données à tout moment via le bouton ci-dessous. Aucune donnée n'est transmise à des tiers sans votre consentement.</p>
+        </div>
+        <div style="margin-top: 30px; text-align: center;">
+          <button id="delete-data-btn" style="
+            padding: 12px 24px;
+            background: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 24px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+          "
+          >
+            🗑️ Supprimer toutes mes données
+          </button>
+        </div>
+      </div>
+
+    <!-- Onboarding première visite -->
+    <div id="onboarding-overlay" style="
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(15, 23, 42, 0.72);
+      padding: 20px;
+    ">
+      <div style="
+        position: relative;
+        width: 100%;
+        max-width: 380px;
+        background: #fff;
+        border-radius: 20px;
+        padding: 28px 22px 20px 22px;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, .3);
+        text-align: center;
+      ">
+        <button id="onboarding-skip" type="button" style="
+          position: absolute;
+          top: 8px;
+          right: 10px;
+          background: none;
+          border: none;
+          font-size: 14px;
+          color: #6b6375;
+          cursor: pointer;
+          padding: 8px;
+          font-family: inherit;
+        ">Passer</button>
+
+        <div data-onboarding-step="0">
+          <div style="font-size: 56px; line-height: 1; margin-bottom: 12px;">🗺️</div>
+          <h3 style="margin: 0 0 8px 0; font-size: 19px;">Carte vocale</h3>
+          <p class="fb-muted" style="margin: 0;">Cherche un lieu en parlant.</p>
+        </div>
+
+        <div data-onboarding-step="1" style="display: none;">
+          <div style="font-size: 56px; line-height: 1; margin-bottom: 12px;">📱</div>
+          <h3 style="margin: 0 0 8px 0; font-size: 19px;">Scan santé</h3>
+          <p class="fb-muted" style="margin: 0;">Scanne un produit pour voir sa composition.</p>
+        </div>
+
+        <div data-onboarding-step="2" style="display: none;">
+          <div style="font-size: 56px; line-height: 1; margin-bottom: 12px;">📊</div>
+          <h3 style="margin: 0 0 8px 0; font-size: 19px;">Comparateur</h3>
+          <p class="fb-muted" style="margin: 0;">Trouve le meilleur prix près de chez toi.</p>
+        </div>
+
+        <div style="display: flex; gap: 6px; justify-content: center; margin: 18px 0 4px 0;">
+          <span data-onboarding-dot class="is-active" style="width: 8px; height: 8px; border-radius: 50%; background: #1976d2;"></span>
+          <span data-onboarding-dot style="width: 8px; height: 8px; border-radius: 50%; background: #d7d7de;"></span>
+          <span data-onboarding-dot style="width: 8px; height: 8px; border-radius: 50%; background: #d7d7de;"></span>
+        </div>
+
+        <button id="onboarding-next" type="button" class="fb-btn fb-btn-primary" style="margin-top: 12px;">Suivant</button>
+      </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Main app script -->
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
