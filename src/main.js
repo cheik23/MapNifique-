@@ -89,6 +89,104 @@ const escapeHtmlAttr = (value) => String(value ?? '')
   .replace(/</g, '&lt;')
   .replace(/>/g, '&gt;');
 
+// ---------------------------------------------------------------------------
+// Bons plans en ligne (Awin Offers API, via la fonction serveur /api/offers)
+// Les textes viennent des annonceurs : tout est échappé, aucun onclick inline.
+// ---------------------------------------------------------------------------
+const enLigneState = { type: 'all', cache: new Map(), bound: false };
+const EN_LIGNE_TTL_MS = 10 * 60 * 1000;
+
+const renderEnLigneOffers = (container, offers) => {
+  const esc = escapeHtmlAttr;
+  container.innerHTML = offers.map((offer, i) => {
+    const href = /^https:\/\//i.test(offer.url || '') ? offer.url : '';
+    const end = offer.endDate ? new Date(offer.endDate) : null;
+    const endText = end && !Number.isNaN(end.getTime()) ? `Jusqu'au ${end.toLocaleDateString('fr-FR')}` : '';
+    const isVoucher = offer.type === 'voucher';
+    return `
+      <div style="border: 1px solid #e5e4e7; border-radius: 12px; padding: 16px; margin: 12px 0; background: #fff; text-align: left;">
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 6px;">
+          <span style="font-size: 12px; font-weight: 700; color: #1976d2;">${esc(offer.advertiser)}</span>
+          <span style="font-size: 11px; padding: 2px 8px; border-radius: 999px; background: ${isVoucher ? '#fff3cd' : '#e3f2fd'};">${isVoucher ? 'Code promo' : 'Promotion'}</span>
+          ${endText ? `<span style="font-size: 11px; color: #6b6375;">${esc(endText)}</span>` : ''}
+        </div>
+        <h3 style="margin: 0 0 6px 0; font-size: 16px;">${esc(offer.title)}</h3>
+        ${offer.description ? `<p style="margin: 4px 0; font-size: 13px; color: #444;">${esc(offer.description)}</p>` : ''}
+        ${offer.code ? `
+          <div style="display: flex; gap: 8px; align-items: center; margin: 10px 0;">
+            <code style="padding: 6px 10px; background: #f5f5f5; border: 1px dashed #999; border-radius: 6px; font-size: 14px;">${esc(offer.code)}</code>
+            <button type="button" data-copy="${i}" style="padding: 6px 12px; background: #e5e4e7; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Copier</button>
+          </div>` : ''}
+        ${offer.terms ? `<details style="margin: 6px 0; font-size: 12px; color: #6b6375;"><summary>Conditions</summary><p style="margin: 6px 0;">${esc(offer.terms)}</p></details>` : ''}
+        ${href ? `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer sponsored" style="display: inline-block; margin-top: 6px; padding: 8px 16px; background: #ffb300; color: #111; font-size: 14px; font-weight: 500; border-radius: 4px; text-decoration: none;">Profiter de l'offre</a>
+          <span style="margin-left: 6px; font-size: 11px; color: #666;">Lien affilié</span>` : ''}
+      </div>`;
+  }).join('');
+
+  container.querySelectorAll('[data-copy]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const offer = offers[Number(btn.dataset.copy)];
+      if (!offer || !offer.code) return;
+      try {
+        await navigator.clipboard.writeText(offer.code);
+        showToast('Code copié', 'success');
+      } catch {
+        showToast('Copie impossible : sélectionne le code à la main.', 'error');
+      }
+    });
+  });
+};
+
+const loadEnLigne = async () => {
+  const resultsEl = document.getElementById('enligne-results');
+  if (!resultsEl) return;
+
+  if (!enLigneState.bound) {
+    enLigneState.bound = true;
+    document.querySelectorAll('[data-enligne-type]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        enLigneState.type = btn.dataset.enligneType;
+        document.querySelectorAll('[data-enligne-type]').forEach((other) => {
+          const active = other === btn;
+          other.style.background = active ? '#1976d2' : '#fff';
+          other.style.color = active ? '#fff' : '#1976d2';
+        });
+        loadEnLigne();
+      });
+    });
+  }
+
+  const type = enLigneState.type;
+  const cached = enLigneState.cache.get(type);
+  if (cached && Date.now() - cached.at < EN_LIGNE_TTL_MS) {
+    cached.offers.length
+      ? renderEnLigneOffers(resultsEl, cached.offers)
+      : (resultsEl.innerHTML = '<p class="fb-muted">Aucun bon plan pour le moment.</p>');
+    return;
+  }
+
+  resultsEl.innerHTML = '<p class="fb-muted">Chargement des bons plans…</p>';
+  try {
+    const response = await fetch(`/api/offers?type=${encodeURIComponent(type)}`);
+    if (response.status === 503) {
+      resultsEl.innerHTML = '<p class="fb-muted">Les bons plans en ligne seront bientôt disponibles.</p>';
+      return;
+    }
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const offers = Array.isArray(data.offers) ? data.offers : [];
+    enLigneState.cache.set(type, { at: Date.now(), offers });
+    if (offers.length === 0) {
+      resultsEl.innerHTML = '<p class="fb-muted">Aucun bon plan pour le moment.</p>';
+      return;
+    }
+    renderEnLigneOffers(resultsEl, offers);
+  } catch (error) {
+    console.warn('[En ligne] chargement impossible :', error?.message || error);
+    resultsEl.innerHTML = '<p class="fb-muted">Impossible de charger les bons plans. Réessayez plus tard.</p>';
+  }
+};
+
 /**
  * Génère un lien de suivi Awin via le Link Builder.
  * @param {string|number} advertiserId ID du programme annonceur Awin
@@ -1806,6 +1904,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // pour que les apps approuvées entre-temps apparaissent tout de suite.
     if (viewName === 'decouvrir') {
       renderMarketplace();
+    }
+
+    // Bons plans en ligne : chargés à l'ouverture de l'onglet (cache mémoire 10 min).
+    if (viewName === 'enligne') {
+      loadEnLigne();
     }
   }
 

@@ -4,7 +4,8 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>freebuff-map</title>
+    <meta name="description" content="MapNifique : Votre carte interactive pour trouver des bons plans, scanner vos produits et calculer vos itinéraires." />
+    <title>MapNifique - Le bon plan au bon endroit</title>
 
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -504,10 +505,20 @@
       border-bottom: 1px solid #e5e4e7;
       z-index: 1000;
       display: flex;
-      justify-content: flex-end;
+      align-items: center;
+      justify-content: space-between;
       gap: 8px;
       font-size: 0;
     ">
+      <span id="top-bar-brand" style="
+        font-size: 17px;
+        font-weight: 700;
+        color: #1976d2;
+        letter-spacing: -0.01em;
+        white-space: nowrap;
+        font-family: inherit;
+        pointer-events: none;
+      ">✨ MapNifique</span>
       <button
         id="voice-toggle-btn"
         style="
@@ -601,6 +612,26 @@
       ">
         <span style="font-size: 24px;">📊</span>
         <span>Comparateur</span>
+      </button>
+      <button data-tab="enligne" style="
+        width: 25%;
+        padding: 12px 0;
+        font-size: 16px;
+        background: none;
+        border: none;
+        color: #6b6375;
+        cursor: pointer;
+        flex: 1;
+        min-height: 44px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        transition: color 0.2s;
+      ">
+        <span style="font-size: 24px;">🌐</span>
+        <span>En ligne</span>
       </button>
       <button data-tab="decouvrir" style="
         width: 20%;
@@ -993,10 +1024,22 @@
         <div id="comparateur-results" style="margin-top: 12px; max-height: 400px; overflow-y: auto;"></div>
       </div>
 
+      <!-- En ligne view : bons plans Awin (promotions et codes promo) -->
+      <div id="view-enligne" data-view="enligne" style="display: none; padding: 20px; max-width: 900px; margin: 0 auto;">
+        <h2 style="margin: 8px 0 4px 0;">🌐 Bons plans en ligne</h2>
+        <p class="fb-muted">Promotions et codes promo de marchands partenaires. Liens affiliés : nous percevons une commission, sans surcoût pour vous.</p>
+        <div id="enligne-filters" style="display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0;">
+          <button type="button" data-enligne-type="all" style="padding: 8px 14px; border-radius: 999px; border: 2px solid #1976d2; background: #1976d2; color: #fff; cursor: pointer; font-size: 13px;">Tout</button>
+          <button type="button" data-enligne-type="voucher" style="padding: 8px 14px; border-radius: 999px; border: 2px solid #1976d2; background: #fff; color: #1976d2; cursor: pointer; font-size: 13px;">Codes promo</button>
+          <button type="button" data-enligne-type="promotion" style="padding: 8px 14px; border-radius: 999px; border: 2px solid #1976d2; background: #fff; color: #1976d2; cursor: pointer; font-size: 13px;">Promotions</button>
+        </div>
+        <div id="enligne-results"></div>
+      </div>
+
       <!-- Profil view -->
       <div id="view-profil" data-view="profil" style="display: none; padding: 20px; text-align: center;">
         <h2 style="margin: 4px 0 8px 0;">⚙️ Paramètres</h2>
-        <p>Bienvenue sur freebuff-map !</p>
+        <p>Bienvenue sur MapNifique !</p>
         <div style="margin: 20px 0; text-align: left; max-width: 300px; margin-left: auto; margin-right: auto;">
           <button id="mentions-legales-btn" style="
             width: 100%;
@@ -1018,7 +1061,7 @@
 
         <!-- Compte, espace développeur et abonnement -->
         <div id="profile-account" style="margin: 0 auto 8px auto; max-width: 300px; text-align: left;">
-          <div id="app-logo" title="freebuff-map" style="
+          <div id="app-logo" title="MapNifique" style="
             display: flex;
             align-items: center;
             gap: 8px;
@@ -1035,7 +1078,7 @@
             -webkit-user-select: none;
           ">
             <span style="font-size: 22px;">🗺️</span>
-            <span>freebuff-map</span>
+            <span>MapNifique</span>
           </div>
 
           <p id="profile-user-name" style="margin: 0 0 8px 0; font-size: 14px; color: #333; display: none;"></p>
@@ -1206,7 +1249,7 @@
       <!-- Marketplace : applications approuvées -->
       <div id="view-decouvrir" data-view="decouvrir" style="display: none; padding: 20px; max-width: 900px; margin: 0 auto;">
         <h2 style="margin: 8px 0 4px 0;">✨ Découvrir</h2>
-        <p class="fb-muted">Les applications validées par l'équipe freebuff-map.</p>
+        <p class="fb-muted">Les applications validées par l'équipe MapNifique.</p>
 
         <input
           id="decouvrir-search"
@@ -1251,6 +1294,7 @@
           Retour
         </button>
         <h1>Mentions légales</h1>
+        <p style="margin: 0 0 12px 0; color: #333;">Bienvenue sur MapNifique, votre assistant de vie locale : carte interactive, itinéraires, scans de produits et bons plans.</p>
         <div style="margin: 20px 0; padding: 20px; background: #f8f8f8; border-radius: 8px; min-height: 400px;">
           <h2>Attribution OpenStreetMap</h2>
           <p>Données cartographiques © <a href="https://www.openstreetmap.org/" style="color: #1976d2; text-decoration: underline;">OpenStreetMap</a> contributeurs, sous licence <a href="https://creativecommons.org/licenses/by-sa/2.0/" style="color: #1976d2; text-decoration: underline;">CC-BY-SA 2.0</a>.</p>
@@ -1323,7 +1367,7 @@
 
         <div data-onboarding-step="0">
           <div style="font-size: 56px; line-height: 1; margin-bottom: 12px;">🗺️</div>
-          <h3 style="margin: 0 0 8px 0; font-size: 19px;">Carte vocale</h3>
+          <h3 style="margin: 0 0 8px 0; font-size: 19px;">Bienvenue sur MapNifique</h3>
           <p class="fb-muted" style="margin: 0;">Cherche un lieu en parlant.</p>
         </div>
 

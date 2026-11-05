@@ -4,7 +4,7 @@
 //   - Tuiles OpenStreetMap : cache-first (fallback tuile grise)
 //   - API Open Food Facts : network-first (fallback cache, puis JSON "hors-ligne")
 // ⬇ Version incrémentée pour forcer la mise à jour des clients
-const CACHE_NAME = 'monapp-v16';
+const CACHE_NAME = 'mapnifique-v18';
 const TILES_CACHE_NAME = 'monapp-tiles-v8';
 const API_CACHE_NAME = 'monapp-api-v8';
 
@@ -63,6 +63,10 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
+
+  // 0) Fonctions serverless (/api/*) : jamais interceptées ni mises en cache
+  //    par le SW (offres Awin, liens d'affiliation) : le cache est géré par le CDN.
+  if (url.origin === self.location.origin && url.pathname.startsWith('/api/')) return;
 
   // 1) Tuiles OSM : cache-first, fallback tuile grise hors-ligne
   if (isOsmTile(url)) {

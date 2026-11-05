@@ -1,11 +1,11 @@
 {
-  "name": "Mon App Cartographie",
-  "short_name": "MonApp",
+  "name": "MapNifique",
+  "short_name": "MapNifique",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#1976d2",
-  "description": "Carte interactive avec recherche vocale et scan",
+  "description": "Votre assistant de vie locale : carte, itinéraires, scans et bons plans.",
   "icons": [
     {
       "src": "icons/icon-192.png",
