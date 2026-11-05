@@ -2766,69 +2766,11 @@ const comparateurResultsEl = document.getElementById('comparateur-results');
 const searchProducts = async (query) => {
   if (!query.trim()) return;
 
-  // Check cache first
-  const cached = await checkComparateurCache('offres', query.toLowerCase());
-  if (cached) {
-    cachedComparateurResults = cached.results;
-    displayComparateurResults(cached.results);
-    return;
-  }
-
-  // Use Amazon Associates API or generate affiliate link
-  const affiliateLink = `https://www.amazon.fr/s?k=${encodeURIComponent(query)}&tag=${AMAZON_TAG}`;
-
-  try {
-    // Try to fetch from Amazon Partners API (if credentials available)
-    // For now, generate mock results
-    // Product A: physical with distance, Product B: physical with distance, Product C: online with delay
-    // Données simulées en attendant une API de réductions (Ohmydeal, ReefAPI…) :
-    // chaque offre expose discount (%), price/prix, distance et originalPrice.
-    const results = [{
-      name: 'Chaussures de sport - Modèle A',
-      image: '/placeholder-image.png',
-      prix: 49.99,
-      price: '49.99 €',
-      originalPrice: 69.99,
-      discount: 29,
-      distance: 2,        // 2 km du magasin
-      delaiLivraison: 0,  // Pas de délai
-      affiliateLink: affiliateLink
-    }, {
-      name: 'Chaussures de running - Modèle B',
-      image: '/placeholder-image.png',
-      prix: 45.00,
-      price: '45.00 €',
-      originalPrice: 59.90,
-      discount: 25,
-      distance: 5,        // 5 km du magasin
-      delaiLivraison: 0,  // Pas de délai
-      affiliateLink: affiliateLink
-    }, {
-      name: 'Baskets tendance - Modèle C',
-      image: '/placeholder-image.png',
-      prix: 42.00,
-      price: '42.00 €',
-      originalPrice: 60.00,
-      discount: 30,
-      distance: 0,        // Produit en ligne
-      delaiLivraison: 3,  // 3 jours de délai
-      affiliateLink: affiliateLink,
-      // Partenaire Awin : dès qu'un produit expose un advertiserId, son lien
-      // d'achat passe par le Link Builder Awin (repli sur affiliateLink si échec).
-      advertiserId: AWIN_ADVERTISER_EXAMPLE_ID,
-      destinationUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(query)}`
-    }];
-
-    // Store in IndexedDB cache
-    await storeComparateurCache('offres', query.toLowerCase(), results);
-
-    cachedComparateurResults = results;
-    displayComparateurResultsWithWeights(comparateurResultsEl, results, currentWeights);
-  } catch (err) {
-    console.error('Error searching products:', err);
-    showToast('Erreur lors de la recherche', 'error');
-  }
-}
+  // Aucune source de prix réelle n'est branchée : on n'affiche JAMAIS de fausses
+  // offres (ni de résultats mis en cache lors d'anciennes versions de démo).
+  cachedComparateurResults = [];
+  comparateurResultsEl.innerHTML = '<p style="text-align: center; color: #6b6375;">Le comparateur de prix arrive bientôt. Aucune offre n\'est affichée tant qu\'une vraie source de prix n\'est pas connectée.</p>';
+};
 
 // Add click handler to compare button
 comparateurBtn.addEventListener('click', () => {
