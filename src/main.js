@@ -49,9 +49,10 @@ const AMAZON_TAG = "TON_TAG_ICI";
 // Awin — réseau d'affiliation (Link Builder)
 // Le token n'est PAS dans le bundle : il vit dans la variable d'environnement
 // Vercel AWIN_API_TOKEN, lue par la fonction serverless api/awin.js.
-// REMPLACER la valeur ci-dessous par votre identifiant éditeur Awin (numérique).
+// L'identifiant éditeur (AWIN_PUBLISHER_ID) vit aussi côté serveur : le
+// navigateur ne peut plus le choisir. Pour activer les liens Awin, définir
+// VITE_AWIN_ENABLED=true (et les variables serveur) sur Vercel.
 // ---------------------------------------------------------------------------
-const AWIN_PUBLISHER_ID = 'TON_PUBLISHER_ID';
 // Proxy même origine : fonction serverless Vercel (api/awin.js).
 const AWIN_PROXY_URL = '/api/awin';
 // ID annonceur du produit « en ligne » du comparateur (démo) : à remplacer
@@ -60,8 +61,8 @@ const AWIN_ADVERTISER_EXAMPLE_ID = 'TON_ADVERTISER_ID';
 // Limite Awin : 20 appels par minute, soit au moins 3 s entre deux appels.
 const AWIN_MIN_INTERVAL_MS = Math.ceil(60000 / 20);
 
-// Vrai uniquement quand l'identifiant éditeur a été remplacé.
-const AWIN_CONFIGURED = !AWIN_PUBLISHER_ID.startsWith('TON_');
+// Désactivé par défaut : les liens Awin ne sont générés que si VITE_AWIN_ENABLED=true.
+const AWIN_CONFIGURED = (import.meta.env && import.meta.env.VITE_AWIN_ENABLED) === 'true';
 
 const awinLinkCache = new Map();
 let awinLastRequestAt = 0;
@@ -84,6 +85,7 @@ const scheduleAwinRequest = (task) => {
 const escapeHtmlAttr = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
   .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;')
   .replace(/</g, '&lt;')
   .replace(/>/g, '&gt;');
 
@@ -112,7 +114,6 @@ const generateAwinLink = async (advertiserId, destinationUrl) => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            publisherId: AWIN_PUBLISHER_ID,
             advertiserId,
             destinationUrl,
           }),
@@ -1915,53 +1916,64 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // Affiche la fiche produit. Toutes les valeurs venant d'Open Food Facts
+  // (base collaborative, donc non fiable) sont échappées ; aucun onclick inline.
+  const renderProductCard = (product, fromCache) => {
+    const esc = escapeHtmlAttr;
+    const code = String(product.code || '').replace(/\D/g, '');
+    const names = (list) => (list || []).map((t) => (t && t.en) || t).join(', ');
+    const additifs = names(product.additives_tags);
+    const allergenes = names(product.allergens_tags);
+    const grade = /^[a-e]$/.test(product.nutrition_grades || '') ? product.nutrition_grades : '?';
+    const gradeColor = grade === '?' ? '#f44336' : '#4caf50';
+    const hasNova = product.nova_group !== undefined && product.nova_group !== null;
+
+    productResultEl.innerHTML = `
+      <div style="max-width: 500px; margin: 0 auto; padding: 20px; background: white; border: 1px solid #e5e4e7; border-radius: 8px; text-align: left; position: relative;">
+        ${fromCache ? '<span class="cache-badge" style="position: absolute; top: 10px; right: 10px; background: #1976d2; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">cache</span>' : ''}
+        <h3 style="margin: 0 0 16px 0; font-size: 18px;">${esc(product.product_name || 'Produit inconnu')}</h3>
+        <p style="margin: 8px 0; font-size: 14px; color: #6b6375;"><strong>Code :</strong> ${esc(code || 'N/A')}</p>
+        <p style="margin: 8px 0; font-size: 14px;"><strong>Nutri-Score :</strong> <span style="background: ${gradeColor}; color: white; padding: 2px 6px; border-radius: 3px; display: inline-block;">${esc(grade)}</span></p>
+        ${hasNova ? `<p style="margin: 8px 0; font-size: 13px;">Groupe NOVA : ${esc(product.nova_group)}</p>` : ''}
+        ${additifs ? `<p style="margin: 8px 0; font-size: 13px;">Additifs : ${esc(additifs)}</p>` : ''}
+        ${allergenes ? `<p style="margin: 8px 0; font-size: 13px;">Allergènes : ${esc(allergenes)}</p>` : ''}
+        <div style="margin-top: 12px; padding: 8px; border-radius: 8px; background: #f5f5f5; border-top: 1px solid #e5e4e7; font-size: 11px; color: #6b6375;">
+          ⚠️ Information non médicale. Ces données proviennent d'Open Food Facts (licence ODbL) et ne remplacent pas l'avis d'un professionnel de santé.
+          ${code ? `<a href="https://world.openfoodfacts.org/product/${esc(code)}" style="color: #1976d2; text-decoration: underline;" target="_blank" rel="noopener noreferrer">Source : Open Food Facts</a>` : ''}
+        </div>
+        ${voiceEnabled && voiceSynthesisSupported ? '<button type="button" data-action="lire" style="padding: 8px 16px; font-size: 14px; background: #1976d2; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%; margin-top: 8px;">🔊 Écouter</button>' : ''}
+      </div>
+    `;
+
+    const lireBtn = productResultEl.querySelector('[data-action="lire"]');
+    if (lireBtn) {
+      lireBtn.addEventListener('click', () => {
+        lireFiche({
+          nom: product.product_name || 'Produit inconnu',
+          nutriscore: grade,
+          additifs: (product.additives_tags || []).map((t) => (t && t.en) || t),
+        });
+      });
+    }
+  };
+
   // Function to fetch product from Open Food Facts
-  const fetchProductFromCode = async (code) => {
+  const fetchProductFromCode = async (rawCode) => {
+    // Un code-barres EAN/UPC ne contient que 8 à 14 chiffres : tout le reste
+    // est rejeté avant d'être utilisé dans une URL.
+    const code = String(rawCode || '').trim();
+    if (!/^\d{8,14}$/.test(code)) {
+      scanResultEl.textContent = 'Code-barres non reconnu';
+      productResultEl.textContent = '';
+      startScanBtn.disabled = false;
+      return;
+    }
     // Check cache first
     const cachedProduct = await checkProductInCache(code);
     
     if (cachedProduct) {
-      // Display product fiche from cache
-      const product = cachedProduct;
-      
-      let additivesText = '';
-      if (product.additives_tags && product.additives_tags.length > 0) {
-        additivesText = 'Additifs: ' + product.additives_tags.map((t) => t.en || t).join(', ');
-      }
-      
-      let allergensText = '';
-      if (product.allergens_tags && product.allergens_tags.length > 0) {
-        allergensText = 'Allergènes: ' + product.allergens_tags.map((t) => t.en || t).join(', ');
-      }
-      
-      let novaText = '';
-      if (product.nova_group !== undefined) {
-        novaText = 'Groupe NOVA: ' + product.nova_group;
-      }
-      
-      const nutriGrade = product.nutrition_grades || '?';
-      const nutriColor = nutriGrade >= 'a' && nutriGrade <= 'e' ? '#4caf50' : '#f44336';
-      
-      // Add cache badge if product is from cache
-      const cacheBadge = product.timestamp ? `<span style="position: absolute; top: 10px; right: 10px; background: #1976d2; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; z-index: 1000;" class="cache-badge">cache</span>` : '';
-      
-      productResultEl.innerHTML = `
-        <div style="max-width: 500px; margin: 0 auto; padding: 20px; background: white; border: 1px solid #e5e4e7; border-radius: 8; text-align: left; position: relative;">${cacheBadge}
-          <h3 style="margin: 0 0 16px 0; font-size: 18px;">${product.product_name || 'Produit inconnu'}</h3>
-          ${product.image_url ? `<img src="${product.image_url}" alt="${product.product_name || ''}" style="width: 100%; height: auto; margin: 16px 0;">` : ''}
-          <p style="margin: 8px 0; font-size: 14px; color: #6b6375;"><strong>Code:</strong> ${product.code || 'N/A'}</p>
-          <p style="margin: 8px 0; font-size: 14px;"><strong>Nutri-Score:</strong> <span style="background: ${nutriColor}; color: white; padding: 2px 6px; border-radius: 3px; display: inline-block;">${nutriGrade || '?'}</span></p>
-          ${additivesText ? `<p style="margin: 8px 0; font-size: 13px;">${additivesText}</p>` : ''}
-          ${allergensText ? `<p style="margin: 8px 0; font-size: 13px;">${allergensText}</p>` : ''}
-          <div style="margin-top: 12px; padding: 8px; border-radius: 8px; background: #f5f5f5; border-top: 1px solid #e5e4e7; font-size: 11px; color: #6b6375;">
-            ⚠️ Information non médicale. Ces données proviennent d'Open Food Facts et ne remplacent pas l'avis d'un professionnel de santé.\n  <a href="https://world.openfoodfacts.org/product/${product.code}" style="color: #1976d2; text-decoration: underline;" target="_blank">Source : Open Food Facts</a>
-          </div>
-          ${voiceEnabled && voiceSynthesisSupported ? `<button style="padding: 8px 16px; font-size: 14px; background: #1976d2; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%;" onclick="lireFiche({ nom: '${product.product_name || 'Produit inconnu'}', nutriscore: '${product.nutrition_grades || '?'}', additifs: ${(product.additives_tags ? JSON.stringify(product.additives_tags.map((t) => t.en || t)) : '[]').replace(/"/g, '&quot;')})}">🔊 Écouter</button>` : ''}
-          ${!product.timestamp ? `<button style="padding: 8px 16px; font-size: 14px; background: #ffc107; color: #111; border: none; border-radius: 4px; cursor: pointer; margin: 8px 0;">🔄 Rafraîchir</button>` : ''}
-        </div>
-      `;
-      
-      scanResultEl.textContent = `Produit trouvé (cache): ${product.product_name}`;
+      renderProductCard(cachedProduct, true);
+      scanResultEl.textContent = `Produit trouvé (cache): ${cachedProduct.product_name}`;
       return;
     }
     
@@ -1978,41 +1990,8 @@ document.addEventListener('DOMContentLoaded', () => {
           // Store in cache
           await storeProductInCache(code, product);
           
-          // Display product fiche from Open Food Facts
-          let additivesText = '';
-          if (product.additives_tags && product.additives_tags.length > 0) {
-            additivesText = 'Additifs: ' + product.additives_tags.map((t) => t.en || t).join(', ');
-          }
-          
-          let allergensText = '';
-          if (product.allergens_tags && product.allergens_tags.length > 0) {
-            allergensText = 'Allergènes: ' + product.allergens_tags.map((t) => t.en || t).join(', ');
-          }
-          
-          let novaText = '';
-          if (product.nova_group !== undefined) {
-            novaText = 'Groupe NOVA: ' + product.nova_group;
-          }
-          
-          const nutriGrade = product.nutrition_grades || '?';
-          const nutriColor = nutriGrade >= 'a' && nutriGrade <= 'e' ? '#4caf50' : '#f44336';
-          
-          productResultEl.innerHTML = `
-            <div style="max-width: 500px; margin: 0 auto; padding: 20px; background: white; border: 1px solid #e5e4e7; border-radius: 8; text-align: left;">
-              <h3 style="margin: 0 0 16px 0; font-size: 18px;">${product.product_name || 'Produit inconnu'}</h3>
-              ${product.image_url ? `<img src="${product.image_url}" alt="${product.product_name || ''}" style="width: 100%; height: auto; margin: 16px 0;">` : ''}
-              <p style="margin: 8px 0; font-size: 14px; color: #6b6375;"><strong>Code:</strong> ${product.code || 'N/A'}</p>
-              <p style="margin: 8px 0; font-size: 14px;"><strong>Nutri-Score:</strong> <span style="background: ${nutriColor}; color: white; padding: 2px 6px; border-radius: 3px; display: inline-block;">${nutriGrade || '?'}</span></p>
-              ${additivesText ? `<p style="margin: 8px 0; font-size: 13px;">${additivesText}</p>` : ''}
-              ${allergensText ? `<p style="margin: 8px 0; font-size: 13px;">${allergensText}</p>` : ''}
-              <div style="margin-top: 12px; padding: 8px; border-radius: 8px; background: #f5f5f5; border-top: 1px solid #e5e4e7; font-size: 11px; color: #6b6375;">
-                ⚠️ Information non médicale. Ces données proviennent d'Open Food Facts et ne remplacent pas l'avis d'un professionnel de santé.\n  <a href="https://world.openfoodfacts.org/product/${product.code}" style="color: #1976d2; text-decoration: underline;" target="_blank">Source : Open Food Facts</a>
-              </div>
-              ${voiceEnabled && voiceSynthesisSupported ? `<button style="padding: 8px 16px; font-size: 14px; background: #1976d2; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%;" onclick="lireFiche({ nom: '${product.product_name || 'Produit inconnu'}', nutriscore: '${product.nutrition_grades || '?'}', additifs: ${(product.additives_tags ? JSON.stringify(product.additives_tags.map((t) => t.en || t)) : '[]').replace(/"/g, '&quot;')})}">🔊 Écouter</button>` : ''}
-              ${!product.timestamp ? `<button style="padding: 8px 16px; font-size: 14px; background: #ffc107; color: #111; border: none; border-radius: 4px; cursor: pointer; margin: 8px 0;">🔄 Rafraîchir</button>` : ''}
-            </div>
-          `;
-          
+          renderProductCard(product, false);
+
           scanResultEl.textContent = `Produit trouvé: ${product.product_name}`;
           return;
         }
@@ -3024,15 +3003,11 @@ const displayComparateurResultsWithWeights = (resultsEl, results, weights) => {
     ? scoredResults
     : sortDeals(scoredResults, currentSort);
 
-  resultsEl.innerHTML = orderedResults.map((product) => {
-    // Données de lecture vocale, échappées pour un attribut HTML (" → &quot;)
-    const lireData = JSON.stringify({
-      nom: product.name,
-      prix: product.prix,
-      magasin: product.magasin || 'Amazon',
-      distance: product.distance || 0,
-      montantEconomise: product.montantEconomise || 0
-    }).replace(/"/g, '&quot;');
+  resultsEl.innerHTML = orderedResults.map((product, i) => {
+    // La lecture vocale retrouve l'offre par son index (data-lire) : aucune
+    // donnée n'est copiée dans un attribut onclick.
+    const esc = escapeHtmlAttr;
+    const safeHref = /^https:\/\//i.test(product.affiliateLink || '') ? product.affiliateLink : '#';
 
     // Attributs data-* : le href sera remplacé par le lien de suivi Awin une
     // fois généré (hydratation asynchrone, après l'affichage de la liste).
@@ -3052,17 +3027,18 @@ const displayComparateurResultsWithWeights = (resultsEl, results, weights) => {
       : '';
 
     return `
-    <div data-offer-card style="border: 1px solid #e5e4e7; border-radius: 8px; padding: 16px; margin: 12px 0; background: white; transition: transform 0.2s; cursor: pointer;" onclick="window.lireComparateur(${lireData});">
+    <div data-offer-card style="border: 1px solid #e5e4e7; border-radius: 8px; padding: 16px; margin: 12px 0; background: white; transition: transform 0.2s; cursor: pointer;" data-lire="${i}">
       <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;">
-        <h3 style="margin: 0; font-size: 16px;">${product.name || 'Produit inconnu'}</h3>
+        <h3 style="margin: 0; font-size: 16px;">${esc(product.name || 'Produit inconnu')}</h3>
         ${discountBadge}
       </div>
-      ${product.image ? `<img src="${product.image}" alt="${product.name || ''}" style="width: 100px; height: auto; margin: 8px 0;">` : ''}
-      <p style="margin: 4px 0; font-size: 14px; color: #6b6375;">${product.price || 'Prix non disponible'}</p>
+      ${product.image ? `<img src="${esc(product.image)}" alt="${esc(product.name || '')}" style="width: 100px; height: auto; margin: 8px 0;">` : ''}
+      <p style="margin: 4px 0; font-size: 14px; color: #6b6375;">${esc(product.price || 'Prix non disponible')}</p>
       ${product.score !== undefined ? `<p style="margin: 4px 0; font-size: 12px; color: #2e7d32; font-weight: 500;">Score: ${product.score.toFixed(2)}</p>` : ''}
       <div style="margin-top: 8px; display: flex; justify-content: space-between; align-items: baseline;">
         <a
-          href="${product.affiliateLink}"
+          href="${esc(safeHref)}"
+          target="_blank" rel="noopener noreferrer sponsored"
           ${awinAttrs}
           style="
             flex: 1;
@@ -3090,7 +3066,7 @@ const displayComparateurResultsWithWeights = (resultsEl, results, weights) => {
             cursor: pointer;
             margin-left: 4px;
           "
-          onclick="event.stopPropagation(); window.lireComparateur(${lireData});">
+          data-lire="${i}" data-stop="1">
           🔊 Écouter
         </button>
         <button
@@ -3104,13 +3080,29 @@ const displayComparateurResultsWithWeights = (resultsEl, results, weights) => {
             cursor: pointer;
             margin-left: 4px;
           "
-          onclick="event.stopPropagation(); window.lireComparateur(${lireData});">
+          data-lire="${i}" data-stop="1">
           🔁 Répéter
         </button>
       </div>
     </div>
   `;
   }).join('');
+
+  // Lecture vocale : écouteurs attachés ici, sans onclick inline.
+  resultsEl.querySelectorAll('[data-lire]').forEach((el) => {
+    el.addEventListener('click', (event) => {
+      if (el.dataset.stop) event.stopPropagation();
+      const p = orderedResults[Number(el.dataset.lire)];
+      if (!p) return;
+      window.lireComparateur({
+        nom: p.name,
+        prix: p.prix,
+        magasin: p.magasin || 'Amazon',
+        distance: p.distance || 0,
+        montantEconomise: p.montantEconomise || 0
+      });
+    });
+  });
 
   // Remplace les liens de secours par les liens de suivi Awin (asynchrone :
   // la liste est déjà affichée, les hrefs sont mis à jour ensuite).

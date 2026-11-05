@@ -3,12 +3,18 @@
 // il n'est jamais envoyé au navigateur ni inclus dans le bundle.
 //
 // POST /api/awin
-// { "publisherId": "123456", "advertiserId": "12345", "destinationUrl": "https://..." }
+// { "advertiserId": "12345", "destinationUrl": "https://..." }
+// L'identifiant éditeur vient de process.env.AWIN_PUBLISHER_ID (jamais du client).
 // → 200 { "url": "https://www.awin1.com/..." }
 // → 4xx/5xx { "error": "..." }
 
 const AWIN_API_BASE = 'https://api.awin.com';
 const REQUEST_TIMEOUT_MS = 8000;
+
+// Domaines de destination autorisés : n'ajouter que les annonceurs réellement
+// utilisés. Tout autre domaine est refusé (évite d'être un générateur de liens
+// ouvert à n'importe quelle URL).
+const ALLOWED_DESTINATION_HOSTS = new Set(['www.amazon.fr']);
 
 const sendJson = (res, status, payload) => {
   res.statusCode = status;
@@ -48,12 +54,19 @@ export default async function handler(req, res) {
     return sendJson(res, 405, { error: 'Méthode non autorisée : utiliser POST.' });
   }
 
+  // Contrôle d'origine (navigateur) : APP_ORIGIN = https://ton-domaine.vercel.app
+  const allowedOrigin = process.env.APP_ORIGIN;
+  if (allowedOrigin && (req.headers.origin || '') !== allowedOrigin) {
+    return sendJson(res, 403, { error: 'Origine non autorisée.' });
+  }
+
   const token = process.env.AWIN_API_TOKEN;
-  if (!token) {
+  const publisherId = process.env.AWIN_PUBLISHER_ID;
+  if (!token || !publisherId || !/^\d+$/.test(publisherId)) {
     // Message explicite : la variable doit être définie dans Vercel
     // (Settings → Environment Variables) ou dans .env pour `vercel dev`.
     return sendJson(res, 500, {
-      error: 'AWIN_API_TOKEN absent : configurez la variable d\'environnement Vercel.',
+      error: 'Configuration serveur incomplète (AWIN_API_TOKEN / AWIN_PUBLISHER_ID).',
     });
   }
 
@@ -64,16 +77,19 @@ export default async function handler(req, res) {
     return sendJson(res, 400, { error: 'Corps de requête JSON invalide.' });
   }
 
-  const { publisherId, advertiserId, destinationUrl } = body || {};
+  const { advertiserId, destinationUrl } = body || {};
 
-  if (!publisherId || !/^\d+$/.test(String(publisherId))) {
-    return sendJson(res, 400, { error: 'publisherId manquant ou non numérique.' });
+  if (!/^\d+$/.test(String(advertiserId || ''))) {
+    return sendJson(res, 400, { error: 'advertiserId manquant ou non numérique.' });
   }
-  if (!advertiserId || String(advertiserId).trim() === '') {
-    return sendJson(res, 400, { error: 'advertiserId manquant.' });
+  let destination = null;
+  try {
+    destination = new URL(String(destinationUrl || ''));
+  } catch {
+    destination = null;
   }
-  if (!destinationUrl || !/^https:\/\//i.test(String(destinationUrl))) {
-    return sendJson(res, 400, { error: 'destinationUrl doit être une URL https://.' });
+  if (!destination || destination.protocol !== 'https:' || !ALLOWED_DESTINATION_HOSTS.has(destination.hostname)) {
+    return sendJson(res, 400, { error: 'Destination non autorisée.' });
   }
 
   const endpoint = `${AWIN_API_BASE}/publishers/${encodeURIComponent(publisherId)}/linkbuilder/generate`;
@@ -87,7 +103,7 @@ export default async function handler(req, res) {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ advertiserId, destinationUrl }),
+      body: JSON.stringify({ advertiserId, destinationUrl: destination.toString() }),
       signal: controller.signal,
     });
 
@@ -96,10 +112,8 @@ export default async function handler(req, res) {
     if (!response.ok) {
       // On renvoie le détail côté serveur (utile au débogage) sans jamais
       // exposer le token.
-      return sendJson(res, 502, {
-        error: `Awin a répondu HTTP ${response.status}.`,
-        details: raw.slice(0, 500),
-      });
+      console.error('[awin] HTTP', response.status, raw.slice(0, 500));
+      return sendJson(res, 502, { error: `Awin a répondu HTTP ${response.status}.` });
     }
 
     let data;
@@ -111,10 +125,8 @@ export default async function handler(req, res) {
 
     const url = extractTrackingUrl(data);
     if (!url) {
-      return sendJson(res, 502, {
-        error: 'Réponse Awin sans URL de suivi.',
-        details: raw.slice(0, 500),
-      });
+      console.error('[awin] réponse sans URL', raw.slice(0, 500));
+      return sendJson(res, 502, { error: 'Réponse Awin sans URL de suivi.' });
     }
 
     return sendJson(res, 200, { url });
@@ -122,7 +134,8 @@ export default async function handler(req, res) {
     if (error?.name === 'AbortError') {
       return sendJson(res, 504, { error: 'Awin n\'a pas répondu dans le délai imparti.' });
     }
-    return sendJson(res, 502, { error: `Appel Awin impossible : ${error?.message || error}` });
+    console.error('[awin] appel impossible', error?.message || error);
+    return sendJson(res, 502, { error: 'Appel Awin impossible.' });
   } finally {
     clearTimeout(timeoutId);
   }
