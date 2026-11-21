@@ -5,7 +5,7 @@ Ce parcours ne doit déclencher aucune dépense. Choisir exclusivement les offre
 ## 1. Créer la base Neon Free
 
 1. Créer un compte sur https://console.neon.tech/ et un projet `mapnifique-prod`.
-2. Choisir PostgreSQL 17 et une région européenne disponible (par exemple AWS `eu-west-1` si proposée).
+2. Choisir PostgreSQL 17 et la région AWS Europe (Francfort) `aws-eu-central-1`. Au 21 novembre 2026, Neon Functions ne sont disponibles en Europe que dans cette région ; `eu-west-1` ne convient pas pour cette fonction.
 3. Garder le plan Free. La base doit être neuve et vide.
 4. Récupérer la chaîne de connexion directe de la branche `main` ; ne pas la coller dans le dépôt.
 
@@ -61,11 +61,19 @@ Pour l'administration des sources, un `PLACES_ADMIN_TOKEN` doit être configuré
 
 Le site est un frontend statique ; l'API est exécutée par Neon Functions. Vite `preview` reste strictement local sur `127.0.0.1`.
 
-## 5. Activer le nettoyage quotidien des offres
+## 5. Traiter les collectes Playwright sans serveur permanent
+
+Le worker Crawlee/Playwright ne tourne pas en permanence sur Neon Functions : cette fonction est destinée aux requêtes HTTP et aux tâches bornées, et le runtime Node.js Neon ne fournit pas de navigateur Chromium géré pour `PlaywrightCrawler`. Le workflow public GitHub Actions `crawler-worker.yml` exécute donc un passage du worker toutes les 10 minutes sur un runner standard `ubuntu-latest` gratuit pour les dépôts publics.
+
+Après la création de la base de staging et l'activation des migrations, créer le secret GitHub `NEON_DATABASE_URL` avec la chaîne de connexion Neon (poolée) et autoriser Actions sur le dépôt public. Le workflow interroge d'abord PostgreSQL avec un préflight léger ; si la file éligible est vide, il termine sans télécharger Chromium. Lorsqu'un job existe, il installe Chromium, traite au plus un job, limite la durée d'une collecte à 8 minutes et la taille d'une collecte à 100 pages. En cas de délai maximal, le worker libère son lease pour permettre une reprise ultérieure. Les workflows planifiés peuvent être retardés par GitHub ; ce n'est pas un ordonnanceur temps réel. Ce fonctionnement ne coûte rien pour les runners standards des dépôts publics, mais la fréquence est plafonnée pour éviter un polling agressif.
+
+Les sources de collecte restent soumises au double opt-in licence + activation ; aucune source n'est activée par ce workflow.
+
+## 6. Activer le nettoyage quotidien des offres
 
 Après avoir ajouté le secret GitHub Actions `NEON_DATABASE_URL` (chaîne de connexion de la base), le workflow `maintenance-neon.yml` exécute chaque jour `offers-worker` en mode `OFFERS_ONCE=1`. Les sources restent désactivées car `OFFERS_ENABLED_SOURCES` est vide et `OFFERS_SOURCE_LICENSE_APPROVED=false`. Le job ne fait que la rétention et l'expiration selon `Europe/Paris`.
 
-## 6. Créer le stockage de sauvegarde séparé
+## 7. Créer le stockage de sauvegarde séparé
 
 1. Créer un SECOND projet Neon Free `mapnifique-backups`.
 2. Créer un bucket privé `mapnifique-backups` dans Object Storage.
@@ -90,7 +98,7 @@ Conserver la clé privée hors cloud et hors Git ; copier seulement la clé publ
 
 Le bucket doit rester privé. Le workflow conserve quatre sauvegardes au maximum, chiffre avant upload et refuse tout dépassement du plafond défini.
 
-## 7. Tester une restauration
+## 8. Tester une restauration
 
 Télécharger une sauvegarde chiffrée du bucket vers une machine locale, puis créer une nouvelle base Neon Free vide ou une base de test locale PostgreSQL 17. Exécuter :
 
@@ -104,7 +112,7 @@ unset BACKUP_FILE AGE_IDENTITY_FILE RESTORE_DATABASE_URL
 
 Le script refuse une base contenant déjà des objets publics et vérifie que la version restaurée est `2`.
 
-## 8. Règles de zéro dépense
+## 9. Règles de zéro dépense
 
 - Ne pas changer les plans Neon ou Cloudflare vers un plan payant.
 - Ne pas ajouter de moyen de paiement.

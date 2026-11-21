@@ -2,6 +2,22 @@ import { buildApp } from '../src/app.js';
 import { assertPlacesSchemaReady } from '../src/places-api.js';
 import { assertSchemaReady, pool } from '../src/db.js';
 
+// Neon may evict idle PostgreSQL connections when a branch scales to zero.
+// node-postgres emits an error for an idle client; handle it so it cannot crash
+// the function isolate. Pool will discard the stale client and reconnect on demand.
+pool.on('error', (error) => {
+  const code = typeof error?.code === 'string' ? error.code : 'UNKNOWN';
+  console.error(`[neon-function:db] Idle PostgreSQL client dropped (${code}); pool will reconnect on demand.`);
+});
+
+// Neon may evict idle PostgreSQL connections when a branch scales to zero.
+// node-postgres emits an error for an idle client; handle it so it cannot crash
+// the function isolate. Pool will discard the stale client and reconnect on demand.
+pool.on('error', (error) => {
+  const code = typeof error?.code === 'string' ? error.code : 'UNKNOWN';
+  console.error(`[neon-function:db] Idle PostgreSQL client dropped (${code}); pool will reconnect on demand.`);
+});
+
 let appPromise;
 
 async function getApp() {
@@ -46,8 +62,10 @@ export default {
         method,
         url: `${url.pathname}${url.search}`,
         headers: Object.fromEntries(request.headers.entries()),
+        // Neon sits behind an ingress proxy. Use the right-most forwarded entry,
+        // normally the address appended by that ingress, not a client-supplied left-most value.
         remoteAddress: request.headers.get('cf-connecting-ip')
-          || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+          || request.headers.get('x-forwarded-for')?.split(',').at(-1)?.trim()
           || '127.0.0.1',
         payload,
       });

@@ -1,9 +1,9 @@
-MAPNIFIQUE WORKSPACE INVENTORY — 2026-11-21 v5
-
-Files: 171
+MapNifique Workspace — inventory v6
+Files: 175
 
 .github/workflows/backup-neon.yml
 .github/workflows/ci.yml
+.github/workflows/crawler-worker.yml
 .github/workflows/maintenance-neon.yml
 .github/workflows/security-compatibility.yml
 .gitignore
@@ -57,6 +57,7 @@ backend/scraper/migrations/validate-product-identity.psql
 backend/scraper/package-lock.json
 backend/scraper/package.json
 backend/scraper/scripts/backup.sh
+backend/scraper/scripts/check-crawl-queue.js
 backend/scraper/scripts/minimatch-crawlee-smoke.mjs
 backend/scraper/scripts/osm-catalog-init.sql
 backend/scraper/scripts/osm-stage-sync.sql
@@ -112,6 +113,8 @@ backend/scraper/src/stage.test.js
 backend/scraper/src/start-script.test.js
 backend/scraper/src/url-policy.js
 backend/scraper/src/url-policy.test.js
+backend/scraper/src/worker-queue.js
+backend/scraper/src/worker-queue.test.js
 backend/scraper/src/worker.js
 docs/browser-functional-checklist.md
 docs/continuation-review-2026-11-20.md
@@ -139,11 +142,11 @@ frontend/index.html
 frontend/package-lock.json
 frontend/package.json
 frontend/public/favicon.svg
-frontend/public/icons.svg
 frontend/public/icons/mapnifique-180.png
 frontend/public/icons/mapnifique-192.png
 frontend/public/icons/mapnifique-512.png
 frontend/public/icons/mapnifique.svg
+frontend/public/icons.svg
 frontend/public/manifest.webmanifest
 frontend/public/sw.js
 frontend/src/App.css

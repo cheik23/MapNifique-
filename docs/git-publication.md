@@ -78,3 +78,15 @@ gh auth setup-git
 ```
 
 Relance ensuite `npm run publish:github`. Le script réutilise le clone local `~/MapNifique-GitHub-Publish-20261121`, conserve les commits déjà créés et pousse uniquement `work/mapnifique-finalisation-20261121`. Il s'arrête avant le commit si aucune authentification HTTPS ou SSH n'est disponible. `main` n'est jamais la cible de push.
+
+
+### Correction v6 — contrôle authentification
+
+Le dépôt étant public, `git ls-remote` fonctionne sans connexion et ne prouve pas les droits d'écriture. Le script v6 exige désormais `gh auth status` réussi ou une clé SSH GitHub avant de préparer le commit et le push.
+
+
+## Correction v6 — authentification en écriture
+
+Le dépôt étant public, `git ls-remote` réussit sans authentification. Le script ne prend donc plus ce test comme preuve de droits d'écriture : il exige un `gh auth status` réussi ou une clé SSH GitHub avant de créer le clone/commit. Après `gh auth login --hostname github.com --git-protocol https --web`, relancer `npm run publish:github`.
+
+Le script de publication v6 commence par le contrôle d'authentification puis lance automatiquement `npm run verify:full`, `npm run audit:deps` et `npm run audit:deps:summary`. Il ne crée/actualise la branche de revue qu'après réussite de ces contrôles.

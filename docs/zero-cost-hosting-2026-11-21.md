@@ -65,3 +65,8 @@ Ce stockage est indépendant de la base principale mais reste dans le même four
 ## Étapes d'activation encore nécessaires
 
 Les comptes Neon et Cloudflare appartiennent à l'utilisateur et ne sont pas créés dans ce workspace. Une fois les comptes Free créés, suivre `docs/neon-deploy.md`. Aucun secret ni identifiant ne doit être ajouté au dépôt public.
+
+
+## Worker Playwright en mode zéro euro (ajout v6)
+
+L'API publique repose sur Neon Functions + Neon Postgres. Les tâches de maintenance quotidiennes peuvent être exécutées par Function Triggers Neon ou GitHub Actions. En revanche, la collecte Crawlee/Playwright nécessite un navigateur Chromium : un worker permanent gratuit et fiable n'est pas garanti. Pour éviter un VPS payant, le workflow GitHub public `crawler-worker.yml` lance un seul job toutes les dix minutes avec Chromium sur `ubuntu-latest` ; le préflight lit la file avant d'installer Chromium et le temps d'un passage est limité à huit minutes. Cela donne une collecte périodique, pas un traitement instantané ni une garantie de démarrage à la minute. GitHub confirme que les runners standards sont gratuits dans les dépôts publics. Si GitHub retarde ou manque un cron, les jobs restent dans PostgreSQL et seront repris au prochain passage.

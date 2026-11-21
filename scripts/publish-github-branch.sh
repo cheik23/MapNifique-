@@ -19,35 +19,40 @@ command -v python3 >/dev/null 2>&1 || fail "python3 est requis."
 REMOTE="$REMOTE_INPUT"
 case "$REMOTE_INPUT" in
   https://github.com/*)
-    HTTPS_OK=0
-    if GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=Never git ls-remote "$REMOTE_INPUT" refs/heads/main >/dev/null 2>&1; then
-      HTTPS_OK=1
-    elif command -v gh >/dev/null 2>&1 && gh auth status --hostname github.com >/dev/null 2>&1; then
-      gh auth setup-git --hostname github.com >/dev/null
-      if GIT_TERMINAL_PROMPT=0 git ls-remote "$REMOTE_INPUT" refs/heads/main >/dev/null 2>&1; then
-        HTTPS_OK=1
+    # IMPORTANT: this repository is public, so git ls-remote succeeds anonymously.
+    # Do not treat read-only visibility as proof that a push is authenticated.
+    HTTPS_AUTH=0
+    if command -v gh >/dev/null 2>&1 && gh auth status --hostname github.com >/dev/null 2>&1; then
+      GH_PUSH_ALLOWED="$(gh api repos/cheik23/MapNifique- --jq '.permissions.push' 2>/dev/null || true)"
+      if [[ "$GH_PUSH_ALLOWED" == "true" ]]; then
+        gh auth setup-git --hostname github.com >/dev/null
+        if GIT_TERMINAL_PROMPT=0 git ls-remote "$REMOTE_INPUT" refs/heads/main >/dev/null 2>&1; then
+          HTTPS_AUTH=1
+        fi
       fi
     fi
-    if [[ "$HTTPS_OK" -eq 0 ]] && command -v ssh >/dev/null 2>&1; then
+    if [[ "$HTTPS_AUTH" -eq 0 ]] && command -v ssh >/dev/null 2>&1; then
       SSH_PROBE="$(ssh -T -o BatchMode=yes -o ConnectTimeout=7 -o StrictHostKeyChecking=accept-new git@github.com 2>&1 || true)"
       if grep -qiE 'successfully authenticated|authenticated to GitHub' <<<"$SSH_PROBE"; then
         REMOTE="git@github.com:${REMOTE_INPUT#https://github.com/}"
         REMOTE="${REMOTE%.git}.git"
       fi
     fi
-    [[ "$HTTPS_OK" -eq 1 || "$REMOTE" != "$REMOTE_INPUT" ]] || {
+    [[ "$HTTPS_AUTH" -eq 1 || "$REMOTE" != "$REMOTE_INPUT" ]] || {
       cat >&2 <<'MSG'
-Aucune authentification GitHub utilisable n'a été détectée. Aucun push n'a été tenté.
+Aucune authentification GitHub en écriture n'a été détectée. Le dépôt est public : une lecture anonyme de main ne prouve PAS les droits de push. Aucun clone, commit ni push n'a été lancé.
 
-Option recommandée (sans créer/copier de token dans le terminal) :
-  1. Installer GitHub CLI si nécessaire : https://cli.github.com/
-  2. Exécuter : gh auth login --hostname github.com --git-protocol https --web
-  3. Autoriser l'accès dans le navigateur, puis revenir dans WSL.
-  4. Vérifier : gh auth status --hostname github.com
-  5. Relancer : npm run publish:github
+Dans WSL, exécute exactement ces commandes, séparément :
+  command -v gh || echo 'GitHub CLI absent'
+  gh --version
+  gh auth login --hostname github.com --git-protocol https --web
+  gh auth status --hostname github.com
 
-Alternative : configurer une clé SSH sur GitHub puis relancer le script.
-Le commit local déjà créé dans le dossier de staging sera conservé et repris.
+Autorise MapNifique dans le navigateur, puis relance :
+  npm run publish:github
+
+Alternative : configurer une clé SSH GitHub puis relancer le script.
+Le clone de staging et les commits locaux déjà créés sont conservés.
 MSG
       exit 2
     }
@@ -61,6 +66,13 @@ MSG
     GIT_TERMINAL_PROMPT=0 git ls-remote "$REMOTE" HEAD >/dev/null 2>&1 || fail "Le dépôt distant est inaccessible sans prompt interactif : $REMOTE"
     ;;
 esac
+
+# The publish command is the user's single safe entry point: authenticate first,
+# then rerun the complete validation and dependency audit before creating a commit.
+printf '\nPrépublication — validations complètes, audit et résumé des dépendances...\n'
+(cd "$SOURCE_ROOT" && npm run verify:full)
+(cd "$SOURCE_ROOT" && npm run audit:deps)
+(cd "$SOURCE_ROOT" && npm run audit:deps:summary)
 
 printf 'Source : %s\nDépôt : %s\nBranche : %s\nClone local : %s\n' "$SOURCE_ROOT" "$REMOTE" "$BRANCH" "$DEST"
 

@@ -1,0 +1,79 @@
+name: MapNifique scheduled Playwright crawler (free public runner)
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mapnifique-crawler-worker
+  cancel-in-progress: false
+
+jobs:
+  crawl-one-job:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check database secret (no-op until staging is configured)
+        id: preflight
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          if [[ -z "$DATABASE_URL" ]]; then
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            echo 'NEON_DATABASE_URL absent : worker ignoré sans dépense ni accès réseau.'
+          else
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.preflight.outputs.ready == 'true'
+
+      - name: Set up Node.js
+        if: steps.preflight.outputs.ready == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: backend/scraper/package-lock.json
+
+      - name: Cache Playwright Chromium
+        if: steps.preflight.outputs.ready == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('backend/scraper/package-lock.json') }}
+
+      - name: Install backend dependencies
+        if: steps.preflight.outputs.ready == 'true'
+        run: npm ci --prefix backend/scraper --no-audit --no-fund
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+      - name: Check for an eligible queued crawl
+        id: queue
+        if: steps.preflight.outputs.ready == 'true'
+        run: node backend/scraper/scripts/check-crawl-queue.js
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+
+      - name: Install Chromium and operating-system dependencies
+        if: steps.preflight.outputs.ready == 'true' && steps.queue.outputs.has_jobs == 'true'
+        working-directory: backend/scraper
+        run: npx playwright install --with-deps chromium
+
+      - name: Process at most one queued crawl
+        if: steps.preflight.outputs.ready == 'true' && steps.queue.outputs.has_jobs == 'true'
+        run: node backend/scraper/src/worker.js
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          WORKER_RUN_ONCE: '1'
+          WORKER_JOB_MAX_RUNTIME_MS: '480000'
+          WORKER_JOB_LEASE_MS: '900000'
+          WORKER_JOB_HEARTBEAT_MS: '30000'
+          HARD_MAX_PAGES: '100'
+          DEFAULT_MAX_PAGES: '40'
+          DEFAULT_MAX_CONCURRENCY: '1'

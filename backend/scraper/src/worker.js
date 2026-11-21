@@ -14,6 +14,14 @@ import { finalizeJob } from './stage.js';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const RUN_ONCE = process.env.WORKER_RUN_ONCE === '1';
+const requestedJobRuntimeMs = Number(process.env.WORKER_JOB_MAX_RUNTIME_MS || 0);
+const JOB_RUNTIME_LIMIT_MS = Number.isSafeInteger(requestedJobRuntimeMs)
+  && requestedJobRuntimeMs >= 60_000
+  && requestedJobRuntimeMs <= 15 * 60_000
+  ? requestedJobRuntimeMs
+  : 0;
+
 let stopping = false;
 let active = null;
 let lastPurgeAt = 0;
@@ -42,7 +50,7 @@ async function maybePurge() {
 
 async function main() {
   await initDb();
-  console.log('[worker] Pret. Un job a la fois; la concurrence navigateur reste limitee a 2.');
+  console.log(`[worker] Prêt. Mode=${RUN_ONCE ? 'one-shot' : 'continu'}; concurrence navigateur limitée à 2.`);
   await maybePurge();
 
   while (!stopping) {
@@ -51,18 +59,30 @@ async function main() {
       job = await claimNextJob();
     } catch (error) {
       console.error('[worker] Erreur lecture file:', error.message);
+      if (RUN_ONCE) {
+        process.exitCode = 1;
+        break;
+      }
       await sleep(config.workerPollMs);
       continue;
     }
 
     if (!job) {
       await maybePurge();
+      if (RUN_ONCE) {
+        console.log('[worker] Aucun job disponible; fin du passage.');
+        break;
+      }
       await sleep(config.workerPollMs);
       continue;
     }
 
     const controller = new AbortController();
     active = { job, controller };
+    const runtimeTimer = JOB_RUNTIME_LIMIT_MS
+      ? setTimeout(() => requestStop('WORKER_JOB_MAX_RUNTIME'), JOB_RUNTIME_LIMIT_MS)
+      : null;
+    runtimeTimer?.unref?.();
 
     const heartbeat = setInterval(() => {
       refreshJobHeartbeat(job.id, job.lease_token).then((owned) => {
@@ -115,8 +135,11 @@ async function main() {
       }
     } finally {
       clearInterval(heartbeat);
+      if (runtimeTimer) clearTimeout(runtimeTimer);
       active = null;
     }
+
+    if (RUN_ONCE) break;
   }
 
   await pool.end();
