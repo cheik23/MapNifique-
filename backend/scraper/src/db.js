@@ -6,9 +6,14 @@ const { Pool } = pg;
 
 export const REQUIRED_SCHEMA_VERSION = 2;
 
+const configuredPoolMax = Number(process.env.DATABASE_POOL_MAX || 8);
+const poolMax = Number.isSafeInteger(configuredPoolMax) && configuredPoolMax >= 1 && configuredPoolMax <= 8
+  ? configuredPoolMax
+  : 8;
+
 export const pool = new Pool({
   connectionString: config.databaseUrl,
-  max: 8,
+  max: poolMax,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 10_000,
   statement_timeout: 30_000,

@@ -132,6 +132,7 @@ type OffersPayload = {
 }
 
 const API_BASE = (import.meta.env.VITE_MAPNIFIQUE_API_URL || '').replace(/\/$/, '')
+const USE_MAPLIBRE = String(import.meta.env.VITE_MAPNIFIQUE_MAP_ENGINE || 'maplibre').trim().toLowerCase() !== 'leaflet'
 const RASTER_TILE_URL = (import.meta.env.VITE_MAPNIFIQUE_RASTER_TILE_URL ||
   'https://tile.openstreetmap.org/{z}/{x}/{y}.png').trim()
 
@@ -2584,7 +2585,7 @@ function App() {
         </section>
 
         <main className="map-stage">
-          {import.meta.env.VITE_MAPNIFIQUE_MAP_ENGINE === 'maplibre' ? (
+          {USE_MAPLIBRE ? (
             <Suspense
               fallback={(
                 <div

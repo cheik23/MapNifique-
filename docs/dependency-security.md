@@ -1,51 +1,32 @@
-# MapNifique — revue de sécurité des dépendances
+# Sécurité des dépendances — état du 21 novembre 2026
 
-**Date : 21 novembre 2026**
+## Deux résultats à ne pas confondre
 
-## État lockfile
+Le dernier `npm run verify:full` exécuté dans WSL a obtenu :
 
-| Package | Version effectivement verrouillée | Déclaration minimale | Note |
-|---|---:|---:|---|
-| `fastify` | 5.12.8 | `^5.12.8` | Aligné sur le correctif Fastify 5.x ; ne pas redescendre en 5.6.x |
-| `@fastify/cors` | 11.4.3 | `^11.4.3` | Déclaration alignée sur le lockfile |
-| `crawlee` | 3.18.2 | `^3.18.2` | Version stable `latest` observée ; 3.18.3 est encore préversion `beta` |
-| `@crawlee/core` | 3.18.2 | transitif | Déclare `minimatch ^9.0.0` |
-| `minimatch` | 9.0.9 | `^9.0.0` via `@crawlee/core` | Affecté par GHSA-g3hv-75wg-m249 (`>=7.0.0` et `<11.0.1`) ; correction à partir de 11.0.1 ; candidat de test : 11.0.9 |
+- backend : installation réussie ;
+- frontend : installation réussie ;
+- 217 tests backend et 4 tests frontend réussis ;
+- build TypeScript/Vite réussi ;
+- validation PostgreSQL temporaire réussie.
 
-La commande `npm ci` exécutée par l'utilisateur le 20 novembre a signalé 12 vulnérabilités modérées dans le backend et 0 dans le frontend. Le fichier `backups/security-audit-20261120T224314Z/backend-scraper.json` reste la source exacte du rapport : 12 est un nombre de findings npm, pas nécessairement 12 failles différentes. Le résumé local lisible est maintenant disponible :
+Le dernier `npm run audit:deps` a retourné `backend/scraper=0` et `frontend=0`. C'est le résultat de l'audit npm effectué sur les lockfiles de ce workspace. Les avertissements `lodash.isequal` et `whatwg-encoding` sont des avertissements de dépréciation, et non des vulnérabilités reportées par cet audit.
 
-```bash
-npm run audit:deps
-npm run audit:deps:summary
-```
+**Cela ne suffit pas à fermer l'avis GitHub GHSA-g3hv-75wg-m249.** L'avis GitHub est toujours publié et sa plage affichée inclut `minimatch` 9.x jusqu'à `11.0.0`. La condition de DoS décrite nécessite toutefois `optimizationLevel >= 2`.
 
-Ou en pointant un rapport antérieur :
+## État du chemin Crawlee
 
-```bash
-npm run audit:deps:summary -- backups/security-audit-20261120T224314Z
-```
+Le lockfile courant contient `crawlee@3.18.2`, `@crawlee/core@3.18.2` et `minimatch@9.0.9`. L'appel observé dans `@crawlee/core` instancie `Minimatch` sans définir `optimizationLevel`; la valeur par défaut est 1. Le crawler MapNifique n'expose pas non plus de motifs glob contrôlés librement par les visiteurs.
 
-## Analyse du finding minimatch
+Cela réduit l'exploitabilité de ce chemin précis, mais ne remplace pas un correctif de dépendance.
 
-L'avis concerne une amplification de `globParts` lorsque `optimizationLevel >= 2` et qu'un motif glob contrôlé par un attaquant est compilé. Le défaut n'est pas limité à une méthode appelée directement par MapNifique ; il existe dans le package transitif, d'où la présence dans `npm audit`.
+## Test de compatibilité isolé
 
-La revue de la chaîne applicative a trouvé :
+Le workspace conserve `npm run test:security:minimatch`. Ce test crée une copie temporaire du backend, applique un override expérimental `minimatch@11`, installe les dépendances, exécute les tests backend, un smoke test `enqueueLinks`/Crawlee, l'audit et les tests PostgreSQL temporaires. Il n'écrase pas le lockfile de travail.
 
-- l'appel MapNifique à Crawlee `enqueueLinks` fournit `strategy: 'same-domain'` et `transformRequestFunction`, sans fournir `globs`, `include` ni `exclude` configurables par l'utilisateur ;
-- le motif de produit est un `RegExp` JavaScript construit par `compileProductPattern`, pas un motif `minimatch` ;
-- la source est limitée à une origine HTTP(S) publique, sans IP littérale, domaine interne ni port arbitraire ; chaque URL candidate est contrôlée avant d'être traitée ;
-- Crawlee 3.18.2 construit ses objets `Minimatch` avec `{ nocase: true }`, sans demander `optimizationLevel: 2` ; minimatch conserve le niveau 1 par défaut.
+Ne pas appliquer `npm audit fix --force` ni un override directement dans le workspace tant que ce test isolé n'a pas réussi. Le résultat `npm audit=0` et le test de compatibilité sont deux contrôles différents.
 
-Ces mesures réduisent la voie d'exploitation observée dans le flux actuel, mais elles ne suppriment ni l'advisory ni le finding npm. L'avis GitHub définit la plage affectée comme `>= 7.0.0` et `< 11.0.1` ; la première version corrigée est `11.0.1`. Au 21 novembre 2026, `11.0.9` est la dernière version publiée de minimatch (16 novembre) et les bases consultées ne signalent pas d'avis connu sur cette version.
+## Références
 
-Le package stable `crawlee` publié avec le tag npm `latest` reste `3.18.2` ; `3.18.3` est encore une préversion beta. `@crawlee/core@3.18.2` déclare `minimatch ^9.0.0`. Un override 11.x franchit donc une limite majeure non déclarée par Crawlee. Il ne doit être intégré que si les tests isolés démontrent la compatibilité. Le seul usage repéré par Crawlee dans ce chemin est `new Minimatch(...).match(...)`, ce qui constitue un bon candidat à tester mais pas une preuve suffisante en soi.
-
-## Procédure de mise à jour sûre
-
-1. Refaire `npm run audit:deps` et `npm run audit:deps:summary` lorsque le registre npm est accessible ; conserver les JSON avant/après.
-2. Vérifier dans les advisories la version affectée, les chemins `nodes`, et `fixAvailable` ; séparer les vraies vulnérabilités des simples warnings de dépréciation npm.
-3. Préférer une version stable de Crawlee qui élargit sa contrainte minimatch vers une version corrigée. À défaut, le workspace fournit `npm run test:security:minimatch` : ce script crée une copie temporaire, applique un override global `minimatch ^11.0.1`, régénère le lockfile depuis npm, vérifie que la résolution est en 11.x, installe proprement, exécute la syntaxe, les 217 tests backend, un véritable smoke test Crawlee `CheerioCrawler + enqueueLinks + globs` sur un serveur local, l'audit npm et le runner PostgreSQL jetable.
-4. Les deux fichiers de dépendances ne sont copiés dans le workspace principal qu'après réussite de toutes les étapes. Si une étape échoue, le workspace source reste inchangé et le dossier temporaire est conservé pour diagnostic. Après réussite, exécuter `npm ci --prefix backend/scraper`, `npm run verify:full`, `npm run audit:deps` et `npm run audit:deps:summary`.
-5. Rejeter toute mise à jour qui utilise `npm audit fix --force`, qui rétrograde Crawlee, ou qui introduit des changements non testés. Cette procédure n'a pas encore été exécutée dans l'environnement de l'utilisateur : l'advisory reste donc ouvert jusqu'à obtention d'un audit à zéro.
-
-Les avertissements `lodash.isequal` et `whatwg-encoding` sont des notices de dépréciation affichées lors de l'installation ; ils ne doivent pas être comptés comme des vulnérabilités sans advisory correspondant.
+- Avis : https://github.com/advisories/GHSA-g3hv-75wg-m249
+- Source Crawlee : https://github.com/apify/crawlee/tree/master/packages/core

@@ -207,3 +207,10 @@ Aucune production, migration de base réelle, source commerciale ou secret Verce
 ## Hébergement — décision d'architecture préparatoire
 
 Un comparatif des offres a été ajouté dans `hosting-options-2026-11-21.md`. La solution gratuite Render/Supabase/Railway ne répond pas au besoin d'une API et d'un stockage disponibles en permanence. OCI A1 Always Free est un candidat compute, mais l'architecture DB actuelle utilise une image PostGIS `linux/amd64` alors que A1 est Arm ; ne pas provisionner ce modèle sans image ARM dédiée et tests. La piste de référence à faible coût est Vercel pour le statique + VPS x86 4 vCPU/8 Go pour API, DB et workers + sauvegarde hors hôte chiffrée R2. Aucun service n'a été commandé ou créé.
+
+
+## Révision zéro dépense — 21 novembre 2026
+
+La contrainte budgétaire est désormais stricte : 0 €, aucun abonnement, aucun VPS payant, aucun domaine acheté et aucune carte bancaire ajoutée. La cible de référence est Neon Free Functions + Neon Postgres Free, Cloudflare Pages Free et runners standards GitHub Actions sur le dépôt public. L'architecture et ses quotas sont décrits dans `docs/zero-cost-hosting-2026-11-21.md` et la procédure de déploiement dans `docs/neon-deploy.md`.
+
+Cette cible est serverless : l'API est accessible via une fonction HTTP mais ne constitue pas un serveur 24/7 dédié. La base se met à l'échelle zéro et les quotas Free limitent les volumes. Aucun achat ou déploiement cloud n'a été effectué.

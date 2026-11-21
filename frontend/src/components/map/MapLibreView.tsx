@@ -24,6 +24,8 @@ setWorkerUrl(workerUrl)
 const PMTILES_URL = (import.meta.env.VITE_MAPNIFIQUE_PMTILES_URL || '').trim()
 const RASTER_TILE_URL = (import.meta.env.VITE_MAPNIFIQUE_RASTER_TILE_URL ||
   'https://tile.openstreetmap.org/{z}/{x}/{y}.png').trim()
+const VECTOR_STYLE_URL = (import.meta.env.VITE_MAPNIFIQUE_STYLE_URL ||
+  'https://tiles.openfreemap.org/styles/positron').trim()
 const pmtilesProtocol = new Protocol({ metadata: true })
 
 maplibregl.addProtocol('pmtiles', pmtilesProtocol.tile)
@@ -361,9 +363,9 @@ const VECTOR_STYLE: StyleSpecification = {
   ],
 }
 
-const BASE_STYLE: StyleSpecification = PMTILES_URL
+const BASE_STYLE: StyleSpecification | string = PMTILES_URL
   ? VECTOR_STYLE
-  : RASTER_FALLBACK_STYLE
+  : (VECTOR_STYLE_URL || RASTER_FALLBACK_STYLE)
 
 function createPlacesData(
   places: MapPlace[],

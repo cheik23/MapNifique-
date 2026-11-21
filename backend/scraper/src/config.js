@@ -40,6 +40,7 @@ export const config = {
     'http://localhost:5173',
     'http://127.0.0.1:5173',
     'https://mapnifique.vercel.app',
+    'https://mapnifique.pages.dev',
     ...(process.env.CORS_ORIGINS || '').split(',').map((value) => value.trim()).filter(Boolean),
   ])],
   workerPollMs: Math.max(1000, positiveInteger(process.env.WORKER_POLL_MS, 3000, 60_000)),

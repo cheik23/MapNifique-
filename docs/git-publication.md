@@ -65,3 +65,16 @@ gh auth login --hostname github.com --git-protocol https --web
 gh auth status --hostname github.com
 npm run publish:github
 ```
+
+
+## Authentification WSL après échec du push
+
+Si WSL affiche `gh: command not found`, installe d'abord le client GitHub gratuit puis connecte-le au compte via le navigateur :
+
+```bash
+sudo apt update && sudo apt install -y gh
+gh auth login --hostname github.com --git-protocol https --web
+gh auth setup-git
+```
+
+Relance ensuite `npm run publish:github`. Le script réutilise le clone local `~/MapNifique-GitHub-Publish-20261121`, conserve les commits déjà créés et pousse uniquement `work/mapnifique-finalisation-20261121`. Il s'arrête avant le commit si aucune authentification HTTPS ou SSH n'est disponible. `main` n'est jamais la cible de push.

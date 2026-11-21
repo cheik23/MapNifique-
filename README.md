@@ -99,3 +99,10 @@ host path or a named Docker volume.
 - État réel, validations et travaux restants : `docs/current-status-2026-11-21.md`
 
 Avant release, lancer `npm run verify:release` depuis la racine après `npm ci --prefix backend/scraper` et `npm ci --prefix frontend`. Cette commande effectue le lint, les tests, le build et le runner PostgreSQL jetable. Elle ne déploie pas.
+
+
+## Hébergement strictement gratuit
+
+La stratégie de production de départ est documentée dans [`docs/zero-cost-hosting-2026-11-21.md`](docs/zero-cost-hosting-2026-11-21.md). Elle utilise Neon Free pour l'API Node/PostgreSQL, Cloudflare Pages Free pour le frontend statique et les runners standards GitHub Actions du dépôt public pour les tâches planifiées. Aucun VPS, domaine ou abonnement payant n'est prévu.
+
+Procédure d'activation : [`docs/neon-deploy.md`](docs/neon-deploy.md). Sources de lieux et restrictions de réutilisation : [`docs/data-sources-and-reuse-2026-11-21.md`](docs/data-sources-and-reuse-2026-11-21.md).
