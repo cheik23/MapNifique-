@@ -6,9 +6,9 @@
 
 | Area | Evidence available now | Remaining validation |
 |---|---|---|
-| Frontend | User run on 2026-11-20: Oxlint 0 warning/0 error, frontend unit tests 4/4 PASS. The build then failed with two TypeScript issues; `preview-fix` archive adds a declaration for `catalog-price.js` and a mutable `BrandOfferEntry` tuple. | Re-run `npm run build` on the `preview-fix` archive; no successful TypeScript/Vite build result has been supplied yet. Browser navigation, GPS permission states, responsive layout and iPhone Safari remain NOT TESTED. See `browser-functional-checklist.md`. |
+| Frontend | User run on 2026-11-21 in the finalization workspace: Oxlint 0 warning/0 error, frontend unit tests 4/4 PASS, `tsc -b` PASS and Vite production build PASS (2,111 modules transformed). | Browser navigation, GPS permission states, responsive layout and iPhone Safari remain NOT TESTED. See `browser-functional-checklist.md`. |
 | API and business logic | Backend Node tests exercise validation, SQL construction, empty responses, categories, deduplication, source attribution, offer validity/retention, worker leases, token comparison and rate limits. | Tests use mocked PostgreSQL interfaces for most route/query coverage; they do not establish live SQL or data quality. |
-| PostgreSQL métier | Le runner Prompt 26 a été exécuté dans le workspace antérieur par l'utilisateur : `OVERALL=PASS` (migrations fraîches/historiques, identité, concurrence, backup/restore, tmpfs effectif). | Ce PASS précède l'archive `preview-fix`. `verify:full` du workspace hardening s'est arrêté avant l'étape PostgreSQL à cause du build frontend ; rejouer le runner sur la dernière archive après build PASS. |
+| PostgreSQL métier | User run on 2026-11-21 in the finalization workspace: Prompt 26 runner `OVERALL=PASS` and `MAPNIFIQUE_FULL_VALIDATION=PASS` (fresh/historical migrations, identity, concurrency, backup/restore, verified tmpfs isolation). | This proves the disposable SQL scenario only; it is not a live production DB, production data migration, or full OSM/PostGIS catalogue test. |
 | PostgreSQL/PostGIS OSM | Les requêtes du catalogue `osm_places` utilisent PostGIS et `pg_trgm`. | Le runner Prompt 26 utilise l'image officielle PostgreSQL simple et ne valide pas le catalogue OSM/PostGIS. |
 | Collection | The crawler checks same-host URLs, observes `robots.txt`, caps concurrency/pages/rate and does not retry blocked pages. | No live collection, retailer-terms review per enabled source, scheduled cloud run, retry-after-restart, or cloud worker is verified. |
 | Production/cloud | The hosting comparison is based on current official plan documentation. | No cloud resources, backups, alerts, stable API origin or production data migration have been created or verified. |
@@ -27,7 +27,7 @@ npm --prefix backend/scraper test
 npm --prefix backend/scraper audit --omit=dev
 ```
 
-Record the exact test totals and audit advisories. Do not apply a major dependency change only to make the audit summary empty; confirm Crawlee compatibility and re-run the suite first.
+Record the exact test totals and audit advisories. The current run showed 12 moderate backend findings and 0 frontend findings. The workspace now includes `npm run test:security:minimatch`, which validates a major override in an isolated copy before applying it. Do not use `npm audit fix --force`; keep the source workspace unchanged if that isolated validation does not pass.
 
 ## 2. Frontend and navigation smoke test
 
@@ -100,7 +100,7 @@ Before allowing public traffic in staging:
 - Verify request/body bounds, CORS allow-list, trusted proxy IPs, error responses, health-check scope and log redaction. Never log credentials or exact search coordinates.
 - Verify only intended public read routes are exposed. Do not expose admin task errors, source configuration, stack traces, host paths or secrets.
 - Inspect the built frontend and source map configuration for secrets. `VITE_*` values are public.
-- Review current npm audit output and the documented minimatch/Crawlee advisory before release.
+- Run `npm run test:security:minimatch` after registry connectivity is available; require an audit total of zero before closing the minimatch advisory.
 
 ## 6. PWA, map and mobile checks
 
@@ -122,8 +122,7 @@ No production DNS switch, deployment, secret update or data migration is part of
 ## Addendum 21 novembre 2026 — archive preview-fix et statut exact
 
 - Les déclarations `fastify` et `@fastify/cors` ont été remontées aux versions stables déjà présentes dans le lockfile (Fastify 5.12.8, CORS 11.4.3) pour éviter une régression lors d'une nouvelle résolution. Le lockfile n'introduit pas de major update.
-- Le finding `minimatch@9.0.9` reste ouvert et expliqué dans `dependency-security.md`; aucun override 11.x non validé n'est imposé.
-- Les résultats de l'utilisateur pour le workspace hardening restent : lint PASS, backend check PASS, backend 217/217, frontend 4/4, build FAIL à deux erreurs TypeScript avant intégration du correctif `preview-fix`. La présence du correctif dans l'archive ne vaut pas preuve de build PASS.
-- Le moteur d'exécution assistant ne disposait pas d'un registre npm/Docker accessible (DNS npm indisponible, pas de binaire Docker) ; les builds et intégrations doivent être exécutés dans le WSL de l'utilisateur ou CI.
-- Les tests navigateur sur cette archive n'ont pas été exécutés ; Browser Use n'a pas pu démarrer faute de crédits de navigateur. Utiliser le procès-verbal `browser-functional-checklist.md`.
-- `verify:full` du monorepo exécute lint, tests et build puis PostgreSQL. Le runner SQL ne s'exécute pas si le build échoue ; lancer le runner séparément uniquement après un build vert, sur son conteneur jetable.
+- Le 21 novembre, l'utilisateur a exécuté `npm run verify:full` sur `MapNifique-Finalisation-20261121/MapNifique-Workspace` : lint PASS, backend check PASS, backend 217/217, frontend 4/4, TypeScript PASS, Vite build PASS (2,111 modules), PostgreSQL Prompt 26 `OVERALL=PASS`, résultat global `MAPNIFIQUE_FULL_VALIDATION=PASS`.
+- Le même audit a trouvé 12 findings modérés côté backend et 0 côté frontend. `npm run test:security:minimatch` est maintenant fourni : essai temporaire, lockfile 11.x, installation, tests backend, crawl synthétique Crawlee, audit npm et PostgreSQL avant application au workspace. Cet essai n'a pas encore été exécuté.
+- Le test navigateur réel n'a pas été mené ; la preview locale écoute bien sur `http://localhost:4173`, mais l'API/PostGIS et les vrais parcours GPS/offres doivent encore être vérifiés dans un navigateur avec backend local ou staging jetable.
+- Le runner SQL ne s'exécute pas si le build échoue ; le dernier run complet incluait bien le runner et son conteneur jetable a été supprimé.

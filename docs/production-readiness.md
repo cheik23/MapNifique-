@@ -174,3 +174,36 @@ Aucun push Git, aucun changement de projet Vercel, aucune création de cloud, au
 La configuration Compose actuelle est une configuration locale : elle expose l'API uniquement sur `127.0.0.1:8787` et conserve PostgreSQL sur un volume local persistant. Elle n'est pas une infrastructure publique permanente. Avant mise en production, il faut encore un endpoint API stable en HTTPS, un PostgreSQL/PostGIS privé et durable, un rôle DB runtime moins privilégié que le rôle de migration (le démarrage actuel exécute encore certains contrôles/DDL), des secrets côté serveur, une planification durable des workers, des sauvegardes chiffrées hors hôte avec test de restauration, des alertes de disponibilité, une politique de logs/rétention, et la validation des licences/robots des sources d'offres.
 
 Le choix entre gratuit best-effort et hébergement payant/managed doit inclure un plafond de coût mensuel et un objectif de disponibilité. Aucun service cloud payant ou gratuit n'a été créé dans cette passe.
+
+
+## Addendum du 21 novembre 2026 — état réel Vercel et séparation frontend/backend
+
+Une nouvelle lecture du projet Vercel `mapnifique` confirme :
+
+- projet `mapnifique`, framework détecté `vite`, plan Hobby, lié au dépôt GitHub `cheik23/MapNifique-` ;
+- dernier déploiement consulté : `READY`, cible `production`, créé le 13 novembre 2026, source `redeploy`, alias `mapnifique.vercel.app` et `mapnifique-g-c35c.vercel.app` ; les métadonnées de ce déploiement ne contiennent pas de commit/branche Git vérifiable ;
+- le paramètre de build API côté frontend `VITE_MAPNIFIQUE_API_URL` pointe encore vers un Cloudflare Quick Tunnel dans les environnements Preview et Production. Une Quick Tunnel est temporaire et ne constitue pas une adresse API de production ; ne pas reconduire cette valeur dans un nouveau déploiement. La documentation officielle Cloudflare la réserve au développement/à l'expérimentation et indique que son URL temporaire dépend du processus `cloudflared` actif : https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/ ;
+- le nouveau frontend utilise `VITE_MAPNIFIQUE_API_URL` (valeur publique injectée au build, jamais un secret). Le déploiement stable nécessitera une API HTTPS permanente, sa CORS allowlist incluant exactement le domaine Vercel retenu, et une valeur d'environnement Vercel correspondant à cet endpoint ;
+- l'architecture actuelle est monorepo : après examen et fusion de la branche de transition, Vercel devra builder le dossier `frontend` (ou recevoir une configuration racine équivalente). La configuration Vercel actuelle n'a pas été modifiée ; le root directory et les réglages du projet restent à vérifier avant tout build ;
+- le backend Fastify, PostgreSQL/PostGIS, les deux workers et la planification ne doivent pas être déployés comme partie du frontend statique Vite. Ils ont besoin d'un hébergeur adapté aux processus continus, d'une base privée, d'un stockage persistant, des migrations et d'une gestion de secrets côté serveur.
+
+**Blocage de publication :** la branche de transition a été commitée localement mais le `git push` HTTPS a échoué faute d'authentification. Aucun déploiement Vercel de cette architecture n'a été lancé. Ne pas modifier l'environnement de production `VITE_MAPNIFIQUE_API_URL`, les domaines ou les secrets avant qu'une API de staging permanente ait été choisie, testée et autorisée.
+
+
+## Addendum de suivi — 21 novembre 2026, après validation utilisateur
+
+Les éléments ci-dessous remplacent les statuts plus anciens de ce document lorsque ceux-ci divergent :
+
+- Le lancement utilisateur de `npm run verify:full` dans `~/MapNifique-Finalisation-20261121/MapNifique-Workspace` a réussi : TypeScript/Vite, lint, 217 tests backend, 4 tests frontend et runner PostgreSQL jetable (`OVERALL=PASS`, `MAPNIFIQUE_FULL_VALIDATION=PASS`).
+- `npm run preview` fonctionne à `http://localhost:4173`. Cela confirme le serveur Vite Preview local, pas les parcours API, GPS, offres ou itinéraires en navigateur.
+- La nouvelle architecture a été commité localement dans `~/MapNifique-GitHub-Publish-20261121`, branche `work/mapnifique-finalisation-20261121`, commit initial `f0674c7`. Le push HTTPS a échoué faute d'authentification GitHub. Aucun commit/push sur `main` n'a eu lieu.
+- Le script de publication a été renforcé pour reprendre ce clone local, détecter GitHub CLI ou SSH et refuser les prompts de mot de passe. Authentifier d'abord WSL avec `gh auth login --hostname github.com --git-protocol https --web`, puis exécuter le test de sécurité, puis relancer `npm run publish:github`.
+- L'audit utilisateur le plus récent reste à 12 findings modérés backend et 0 frontend. `scripts/test-minimatch-override.sh` teste `minimatch ^11.0.1` dans une copie jetable. Aucun override n'est adopté tant que l'installation, les 217 tests, le smoke test Crawlee, l'audit npm et le runner PostgreSQL n'ont pas tous réussi.
+- Le projet Vercel existant n'a pas été modifié. Son endpoint API d'environnement pointe encore vers un Cloudflare Quick Tunnel temporaire ; ne pas l'utiliser pour une disponibilité permanente. Documentation officielle : https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/ .
+
+Aucune production, migration de base réelle, source commerciale ou secret Vercel n'a été modifié pendant cette continuation.
+
+
+## Hébergement — décision d'architecture préparatoire
+
+Un comparatif des offres a été ajouté dans `hosting-options-2026-11-21.md`. La solution gratuite Render/Supabase/Railway ne répond pas au besoin d'une API et d'un stockage disponibles en permanence. OCI A1 Always Free est un candidat compute, mais l'architecture DB actuelle utilise une image PostGIS `linux/amd64` alors que A1 est Arm ; ne pas provisionner ce modèle sans image ARM dédiée et tests. La piste de référence à faible coût est Vercel pour le statique + VPS x86 4 vCPU/8 Go pour API, DB et workers + sauvegarde hors hôte chiffrée R2. Aucun service n'a été commandé ou créé.

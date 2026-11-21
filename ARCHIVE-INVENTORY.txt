@@ -1,11 +1,13 @@
 ﻿INVENTAIRE DU WORKSPACE MAPNIFIQUE — 2026-11-21
-Fichiers inclus : 153
+Fichiers inclus : 157
 
 .github\workflows\ci.yml
 .gitignore
 ARCHIVE-INVENTORY.txt
+README.md
 archive\legacy-mapnifique\.env.example
 archive\legacy-mapnifique\.gitignore
+archive\legacy-mapnifique\README.md
 archive\legacy-mapnifique\api\awin.js
 archive\legacy-mapnifique\api\offers.js
 archive\legacy-mapnifique\index.html
@@ -16,7 +18,6 @@ archive\legacy-mapnifique\public\icons\icon-192.png
 archive\legacy-mapnifique\public\icons\icon-512.png
 archive\legacy-mapnifique\public\manifest.json
 archive\legacy-mapnifique\public\sw.js
-archive\legacy-mapnifique\README.md
 archive\legacy-mapnifique\src\api-manager.js
 archive\legacy-mapnifique\src\db.js
 archive\legacy-mapnifique\src\main.js
@@ -32,8 +33,9 @@ archive\legacy-mapnifique\vite.config.js
 backend\scraper\.dockerignore
 backend\scraper\.env.example
 backend\scraper\.gitignore
-backend\scraper\docker-compose.yml
 backend\scraper\Dockerfile
+backend\scraper\README.md
+backend\scraper\docker-compose.yml
 backend\scraper\docs\data-model.md
 backend\scraper\migrations\20261114_offer_external_ids.sql
 backend\scraper\migrations\20261114_offer_validity_constraints.sql
@@ -49,8 +51,8 @@ backend\scraper\migrations\validate-places-offers.psql
 backend\scraper\migrations\validate-product-identity.psql
 backend\scraper\package-lock.json
 backend\scraper\package.json
-backend\scraper\README.md
 backend\scraper\scripts\backup.sh
+backend\scraper\scripts\minimatch-crawlee-smoke.mjs
 backend\scraper\scripts\osm-catalog-init.sql
 backend\scraper\scripts\osm-stage-sync.sql
 backend\scraper\scripts\osm-sync-loop.sh
@@ -108,8 +110,10 @@ docs\browser-functional-checklist.md
 docs\continuation-review-2026-11-20.md
 docs\current-status-2026-11-21.md
 docs\dependency-security.md
+docs\etat-et-prochaines-etapes-2026-11-21.md
 docs\finalization-report-2026-11-21.md
 docs\git-publication.md
+docs\hosting-options-2026-11-21.md
 docs\preview-local.md
 docs\production-readiness.md
 docs\release-gates.md
@@ -119,6 +123,7 @@ frontend\.env.example
 frontend\.gitignore
 frontend\.oxlintrc.json
 frontend\.vercelignore
+frontend\README.md
 frontend\design-system\mapnifique\MASTER.md
 frontend\index.html
 frontend\package-lock.json
@@ -131,7 +136,6 @@ frontend\public\icons\mapnifique-512.png
 frontend\public\icons\mapnifique.svg
 frontend\public\manifest.webmanifest
 frontend\public\sw.js
-frontend\README.md
 frontend\src\App.css
 frontend\src\App.tsx
 frontend\src\assets\hero.png
@@ -149,11 +153,8 @@ frontend\tsconfig.json
 frontend\tsconfig.node.json
 frontend\vite.config.ts
 package.json
-README.md
 scripts\publish-github-branch.sh
 scripts\security-audit.sh
 scripts\summarize-security-audit.mjs
+scripts\test-minimatch-override.sh
 scripts\verify-workspace.sh
-
-Contenus runtime exclus : backups, node_modules, dist, données locales, bases, secrets et journaux.
-Le répertoire archive\legacy-mapnifique conserve uniquement une copie de référence historique en lecture seule.

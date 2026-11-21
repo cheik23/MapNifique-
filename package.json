@@ -16,6 +16,7 @@
     "audit:deps:summary": "node scripts/summarize-security-audit.mjs",
     "verify:release": "npm run verify && npm --prefix backend/scraper run test:postgres:prompt26",
     "preview": "npm --prefix frontend run preview",
-    "publish:github": "bash scripts/publish-github-branch.sh"
+    "publish:github": "bash scripts/publish-github-branch.sh",
+    "test:security:minimatch": "bash scripts/test-minimatch-override.sh"
   }
 }

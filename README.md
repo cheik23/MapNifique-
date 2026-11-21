@@ -42,9 +42,9 @@ Après l’installation des dépendances frontend (`npm ci --prefix frontend`), 
 npm run dev
 ```
 
-Ouvrir ensuite <http://localhost:5173> dans le navigateur Windows ou Linux. Vite écoute sur `0.0.0.0:5173` et utilise le proxy `/api` vers `http://127.0.0.1:8787`. Si l’API locale n’est pas démarrée, l’interface et la carte peuvent s’afficher, mais les recherches de commerces et les promotions qui dépendent de l’API ne seront pas pleinement fonctionnelles.
+Ouvrir ensuite <http://localhost:5173> dans le navigateur Windows ou Linux. Vite écoute sur `127.0.0.1:5173` par défaut et utilise le proxy `/api` vers `http://127.0.0.1:8787`. Pour un test iPhone volontaire sur le réseau local, utiliser explicitement `npm run dev -- --host 0.0.0.0` puis refermer le serveur à la fin. Si l’API locale n’est pas démarrée, l’interface et la carte peuvent s’afficher, mais les recherches de commerces et les promotions qui dépendent de l’API ne seront pas pleinement fonctionnelles.
 
-Le preview Vite est un serveur de développement local, pas une URL publique ni une mise en production. Le backend exige une base locale dont le schéma a été migré et réconcilié en version 2 ; `backend/scraper/scripts/start.sh` ne lance volontairement que PostgreSQL et n’applique aucune migration automatiquement. Ne démarre pas les services API/worker sur une base existante avant d’avoir vérifié une sauvegarde et l’état du schéma.
+Le serveur Vite de développement (`npm run dev`) et le serveur de prévisualisation du build (`npm run preview`) sont locaux, pas des URL publiques ni une mise en production. Le second sert le build compilé sur `http://localhost:4173`. Le backend exige une base locale dont le schéma a été migré et réconcilié en version 2 ; `backend/scraper/scripts/start.sh` ne lance volontairement que PostgreSQL et n’applique aucune migration automatiquement. Ne démarre pas les services API/worker sur une base existante avant d’avoir vérifié une sauvegarde et l’état du schéma.
 
 ## Checks
 
@@ -90,9 +90,11 @@ host path or a named Docker volume.
 - Preview local : `docs/preview-local.md`
 - Checklist navigateur : `docs/browser-functional-checklist.md`
 - Audit dépendances : `npm run audit:deps`, puis `npm run audit:deps:summary`
+- Essai isolé de correction minimatch/Crawlee : `npm run test:security:minimatch` (applique les manifests uniquement si toutes les validations passent)
 - Runbook et statut des validations : `docs/validation-runbook.md`
 - Dépendances : `docs/dependency-security.md`
 - Préparation production : `docs/production-readiness.md`
+- Comparatif et architecture d’hébergement permanente : `docs/hosting-options-2026-11-21.md`
 - Publication GitHub sur une branche dédiée : `docs/git-publication.md` et `scripts/publish-github-branch.sh`
 - État réel, validations et travaux restants : `docs/current-status-2026-11-21.md`
 

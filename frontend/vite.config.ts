@@ -4,12 +4,12 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   preview: {
-    host: '0.0.0.0',
+    host: '127.0.0.1',
     port: 4173,
     strictPort: true,
   },
   server: {
-    host: '0.0.0.0',
+    host: '127.0.0.1',
     port: 5173,
     strictPort: true,
     proxy: {

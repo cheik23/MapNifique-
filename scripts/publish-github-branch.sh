@@ -1,32 +1,71 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Publishes this exact workspace to a new review branch. Never pushes to main.
+# Publie le workspace sur une branche de revue, jamais directement sur main.
 SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-REMOTE="${MAPNIFIQUE_REMOTE:-https://github.com/cheik23/MapNifique-.git}"
+REMOTE_INPUT="${MAPNIFIQUE_REMOTE:-https://github.com/cheik23/MapNifique-.git}"
 BRANCH="${MAPNIFIQUE_BRANCH:-work/mapnifique-finalisation-20261121}"
 DEST="${MAPNIFIQUE_PUBLISH_DIR:-$HOME/MapNifique-GitHub-Publish-20261121}"
 
 fail() { printf 'ERREUR: %s\n' "$*" >&2; exit 1; }
 command -v git >/dev/null 2>&1 || fail "git est requis."
 command -v python3 >/dev/null 2>&1 || fail "python3 est requis."
-[[ -f "$SOURCE_ROOT/package.json" && -d "$SOURCE_ROOT/frontend" && -d "$SOURCE_ROOT/backend/scraper" ]] || fail "Lance ce script depuis l'archive complète MapNifique-Workspace."
+[[ -f "$SOURCE_ROOT/package.json" && -d "$SOURCE_ROOT/frontend" && -d "$SOURCE_ROOT/backend/scraper" ]] || fail "Lance ce script depuis la racine du workspace MapNifique-Workspace."
 [[ "$BRANCH" != "main" && "$BRANCH" != "master" ]] || fail "Publication directe sur main/master interdite."
 [[ "$BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]] || fail "Nom de branche invalide."
-[[ ! -e "$DEST" ]] || fail "Le dossier $DEST existe déjà. Déplace-le ou choisis MAPNIFIQUE_PUBLISH_DIR."
+
+# Aucun prompt de mot de passe GitHub. Utilise d'abord GitHub CLI déjà authentifié,
+# puis une clé SSH GitHub; conserve HTTPS si le credential helper fonctionne déjà.
+REMOTE="$REMOTE_INPUT"
+case "$REMOTE_INPUT" in
+  https://github.com/*)
+    HTTPS_OK=0
+    if GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=Never git ls-remote "$REMOTE_INPUT" refs/heads/main >/dev/null 2>&1; then
+      HTTPS_OK=1
+    elif command -v gh >/dev/null 2>&1 && gh auth status --hostname github.com >/dev/null 2>&1; then
+      gh auth setup-git --hostname github.com >/dev/null
+      if GIT_TERMINAL_PROMPT=0 git ls-remote "$REMOTE_INPUT" refs/heads/main >/dev/null 2>&1; then
+        HTTPS_OK=1
+      fi
+    fi
+    if [[ "$HTTPS_OK" -eq 0 ]] && command -v ssh >/dev/null 2>&1; then
+      SSH_PROBE="$(ssh -T -o BatchMode=yes -o ConnectTimeout=7 -o StrictHostKeyChecking=accept-new git@github.com 2>&1 || true)"
+      if grep -qiE 'successfully authenticated|authenticated to GitHub' <<<"$SSH_PROBE"; then
+        REMOTE="git@github.com:${REMOTE_INPUT#https://github.com/}"
+        REMOTE="${REMOTE%.git}.git"
+      fi
+    fi
+    [[ "$HTTPS_OK" -eq 1 || "$REMOTE" != "$REMOTE_INPUT" ]] || {
+      cat >&2 <<'MSG'
+Aucune authentification GitHub utilisable n'a été détectée. Aucun push n'a été tenté.
+
+Option recommandée (sans créer/copier de token dans le terminal) :
+  1. Installer GitHub CLI si nécessaire : https://cli.github.com/
+  2. Exécuter : gh auth login --hostname github.com --git-protocol https --web
+  3. Autoriser l'accès dans le navigateur, puis revenir dans WSL.
+  4. Vérifier : gh auth status --hostname github.com
+  5. Relancer : npm run publish:github
+
+Alternative : configurer une clé SSH sur GitHub puis relancer le script.
+Le commit local déjà créé dans le dossier de staging sera conservé et repris.
+MSG
+      exit 2
+    }
+    ;;
+  git@github.com:*|ssh://git@github.com/*)
+    SSH_PROBE="$(ssh -T -o BatchMode=yes -o ConnectTimeout=7 -o StrictHostKeyChecking=accept-new git@github.com 2>&1 || true)"
+    grep -qiE 'successfully authenticated|authenticated to GitHub' <<<"$SSH_PROBE" || fail "La clé SSH n'est pas authentifiée auprès de GitHub. Aucun push n'a été tenté."
+    ;;
+  *)
+    # Permet les tests locaux avec un dépôt bare ou un serveur Git privé.
+    GIT_TERMINAL_PROMPT=0 git ls-remote "$REMOTE" HEAD >/dev/null 2>&1 || fail "Le dépôt distant est inaccessible sans prompt interactif : $REMOTE"
+    ;;
+esac
 
 printf 'Source : %s\nDépôt : %s\nBranche : %s\nClone local : %s\n' "$SOURCE_ROOT" "$REMOTE" "$BRANCH" "$DEST"
-printf '\n1/5 — Vérification de la branche distante...\n'
-if git ls-remote --exit-code --heads "$REMOTE" "$BRANCH" >/dev/null 2>&1; then
-  fail "La branche distante $BRANCH existe déjà. Choisis MAPNIFIQUE_BRANCH pour ne pas l'écraser."
-fi
 
-printf '\n2/5 — Clone de main sans toucher au dépôt source...\n'
-git clone --branch main --single-branch "$REMOTE" "$DEST"
-git -C "$DEST" switch --create "$BRANCH" origin/main
-
-printf '\n3/5 — Remplacement du contenu du clone par le workspace validé...\n'
-python3 - "$SOURCE_ROOT" "$DEST" <<'PY'
+copy_workspace() {
+  python3 - "$SOURCE_ROOT" "$DEST" <<'PY'
 from pathlib import Path
 import os
 import shutil
@@ -39,15 +78,11 @@ ignored_dirs = {
     '.next', '.turbo', '.cache', 'coverage', 'backups', '.crawlee',
     'pgdata', 'postgres_data',
 }
-ignored_files = {
-    '.DS_Store', 'Thumbs.db',
-}
+ignored_files = {'.DS_Store', 'Thumbs.db'}
 ignored_suffixes = {
     '.pem', '.key', '.sqlite', '.sqlite3', '.db', '.dump', '.bak',
     '.backup', '.pid', '.log',
 }
-
-# Clear all old tracked/untracked project files in the new clone, retaining .git.
 for child in dest.iterdir():
     if child.name == '.git':
         continue
@@ -59,7 +94,6 @@ for child in dest.iterdir():
 copied = 0
 for current, dirs, files in os.walk(source, topdown=True, followlinks=False):
     cur = Path(current)
-    rel_dir = cur.relative_to(source)
     dirs[:] = [d for d in dirs if d not in ignored_dirs and not (cur / d).is_symlink()]
     for filename in files:
         src = cur / filename
@@ -71,9 +105,9 @@ for current, dirs, files in os.walk(source, topdown=True, followlinks=False):
             continue
         if filename.endswith(tuple(ignored_suffixes)):
             continue
-        if 'backups' in parts or 'node_modules' in parts or 'dist' in parts:
+        if any(part in {'backups', 'node_modules', 'dist', 'secrets', 'pgdata', 'postgres_data'} for part in parts):
             continue
-        if 'secrets' in parts or 'credentials' in filename.lower():
+        if 'credentials' in filename.lower():
             continue
         target = dest / rel
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -81,10 +115,36 @@ for current, dirs, files in os.walk(source, topdown=True, followlinks=False):
         copied += 1
 print(f'Fichiers copiés : {copied}')
 PY
+}
 
-printf '\n4/5 — Contrôles de sécurité et contenu indexé...\n'
+printf '\n1/5 — Vérification de la branche distante...\n'
+if git ls-remote --exit-code --heads "$REMOTE" "$BRANCH" >/dev/null 2>&1; then
+  fail "La branche distante $BRANCH existe déjà. Le script refuse de la remplacer. Vérifie la PR existante."
+fi
+
+if [[ -e "$DEST" ]]; then
+  printf '\n2/5 — Reprise du clone local existant (après push interrompu)...\n'
+  git -C "$DEST" rev-parse --is-inside-work-tree >/dev/null 2>&1 || fail "$DEST existe mais n'est pas un dépôt Git. Déplace-le avant de relancer."
+  CURRENT_BRANCH="$(git -C "$DEST" branch --show-current)"
+  [[ "$CURRENT_BRANCH" == "$BRANCH" ]] || fail "Le clone existant est sur '$CURRENT_BRANCH', attendu '$BRANCH'. Aucun fichier n'a été modifié."
+  [[ -z "$(git -C "$DEST" status --porcelain)" ]] || fail "Le clone de staging contient des modifications locales non validées. Inspecte-les avant de continuer."
+  git -C "$DEST" remote set-url origin "$REMOTE"
+  GIT_TERMINAL_PROMPT=0 git -C "$DEST" fetch origin main --no-tags
+  git -C "$DEST" merge-base --is-ancestor origin/main HEAD || fail "La branche de staging n'est plus basée sur l'historique courant de main. Revue manuelle nécessaire."
+else
+  printf '\n2/5 — Clone de main dans un dossier isolé...\n'
+  git clone --branch main --single-branch "$REMOTE" "$DEST"
+  git -C "$DEST" switch --create "$BRANCH" origin/main
+fi
+
+printf '\n3/5 — Synchronisation du workspace validé dans la branche de revue...\n'
+copy_workspace
+
 git -C "$DEST" add --all
-git -C "$DEST" -c core.whitespace=cr-at-eol diff --cached --check -- . ':(exclude)archive/legacy-mapnifique/**' ':(exclude)docs/finalization-report-2026-11-21.md'
+printf '\n4/5 — Contrôles de sécurité et contenu indexé...\n'
+git -C "$DEST" -c core.whitespace=cr-at-eol diff --cached --check -- . \
+  ':(exclude)archive/legacy-mapnifique/**' \
+  ':(exclude)docs/finalization-report-2026-11-21.md'
 if git -C "$DEST" diff --cached --name-only | grep -E '(^|/)\.env($|\.)' | grep -Ev '\.env\.example$' >/dev/null; then
   fail "Un fichier .env semble indexé. Aucun commit/push n'a été effectué."
 fi
@@ -94,8 +154,6 @@ fi
 printf '\nRésumé des changements :\n'
 git -C "$DEST" diff --cached --stat
 
-# Use the GitHub no-reply identity that already appears in the repository history,
-# but only when this fresh staging clone has no identity configured.
 if ! git -C "$DEST" config user.name >/dev/null; then
   git -C "$DEST" config user.name "cheik23"
 fi
@@ -103,13 +161,15 @@ if ! git -C "$DEST" config user.email >/dev/null; then
   git -C "$DEST" config user.email "cheik23@users.noreply.github.com"
 fi
 
-printf '\n5/5 — Commit et push sur la branche de revue (jamais sur main)...\n'
 if ! git -C "$DEST" diff --cached --quiet; then
-  git -C "$DEST" commit -m "feat: migrate MapNifique to React and PostGIS workspace"
+  printf '\n5/5 — Création du commit de synchronisation...\n'
+  git -C "$DEST" commit -m "chore: sync MapNifique finalisation workspace"
 else
-  fail "Aucun changement à publier."
+  printf '\n5/5 — Aucun nouveau changement ; reprise du commit local existant.\n'
 fi
-git -C "$DEST" push --set-upstream origin "$BRANCH"
+printf 'Push sécurisé vers la branche de revue (aucun push forcé, main intacte)...\n'
+GIT_TERMINAL_PROMPT=0 git -C "$DEST" push --set-upstream origin "$BRANCH"
 
-printf '\nPUBLICATION_TERMINEE\nBranche : %s\nDossier local : %s\nPull request : https://github.com/cheik23/MapNifique-/compare/main...%s?expand=1\n' "$BRANCH" "$DEST" "$BRANCH"
-printf 'La branche main n’a pas été modifiée. Examine la PR avant toute fusion ou mise en production.\n'
+printf '\nPUBLICATION_TERMINEE\nBranche : %s\nCommit : %s\nDossier local : %s\nPull request : https://github.com/cheik23/MapNifique-/compare/main...%s?expand=1\n' \
+  "$BRANCH" "$(git -C "$DEST" rev-parse --short HEAD)" "$DEST" "$BRANCH"
+printf 'La branche main n’a pas été modifiée. Examine la PR et attends la CI avant toute fusion ou mise en production.\n'

@@ -1,8 +1,8 @@
 # MapNifique — rapport de finalisation technique
 
-**Date : 21 novembre 2026**  
-**Base de travail :** archive `MapNifique-Workspace-Complet-20261120-preview-fix.zip`  
-**Périmètre :** build, dépendances, PostgreSQL, parcours navigateur et préparation production.  
+**Date : 21 novembre 2026**
+**Base de travail :** archive `MapNifique-Workspace-Complet-20261120-preview-fix.zip`
+**Périmètre :** build, dépendances, PostgreSQL, parcours navigateur et préparation production.
 **Règle de sûreté :** aucun accès en écriture à une base réelle, aucun commit/push Git, aucune modification Vercel/DNS, aucun secret modifié, aucune création de ressource cloud et aucun déploiement.
 
 ## 1. Build frontend
@@ -113,3 +113,18 @@ npm run audit:deps:summary
 Pour voir l'interface sans backend : `npm run dev` et ouvrir `http://localhost:5173`. Pour prévisualiser le build compilé : `npm run preview` et ouvrir `http://localhost:4173`. Remplir ensuite `docs/browser-functional-checklist.md` avec des données de staging licenciées. Ne pas relier ces previews à la base de production.
 
 La production reste bloquée tant que le build, PostgreSQL sur cette archive, les tests navigateur, l'audit minimatch, le staging complet et le plan de coût/sauvegarde ne sont pas tous acceptés.
+
+
+## Addendum — résultats ultérieurs et correction de statut (21 novembre 2026)
+
+Ce rapport décrivait l'état de préparation avant réception des nouveaux résultats WSL. Les lignes plus anciennes ci-dessus qui disent que le build, PostgreSQL ou Git n'étaient pas exécutés ne décrivent plus l'état actuel. Les résultats ci-dessous les remplacent :
+
+- L'utilisateur a ensuite exécuté `npm run verify:full` sur `MapNifique-Workspace-Complet-20261121-finalisation.zip` : `tsc -b` PASS, `vite build` PASS (2 111 modules), Oxlint 0 erreur, backend 217/217, frontend 4/4, PostgreSQL jetable `OVERALL=PASS` et `MAPNIFIQUE_FULL_VALIDATION=PASS`.
+- L'utilisateur a vérifié `npm run preview` sur la version `git-ready` : Vite Preview a démarré sur `http://localhost:4173`. Cela ne remplace pas les tests fonctionnels navigateur avec API/base actives.
+- L'utilisateur a ensuite créé localement un clone de publication, la branche `work/mapnifique-finalisation-20261121` et le commit initial `f0674c7` (153 fichiers). Le push HTTPS a échoué faute d'authentification (`No anonymous write access`). Aucun push GitHub, branche distante ou PR n'est confirmé ; `main` reste inchangée.
+- Le script de publication a depuis été renforcé pour reprendre le clone local et détecter GitHub CLI ou SSH avant de pousser. La reprise après un push rejeté a été testée sur un dépôt Git bare local ; `main` est restée inchangée. Le vrai push GitHub nécessite toujours `gh auth login ... --web` ou une clé SSH active dans WSL.
+- Un test d'override `minimatch ^11.0.1` en copie isolée a été ajouté ; il n'a pas encore été exécuté dans WSL et les 12 findings modérés backend restent ouverts.
+- Le projet Vercel existant a été inspecté en lecture seule ; son API pointe encore vers un Quick Tunnel Cloudflare temporaire. Aucun réglage Vercel ou déploiement n'a été modifié.
+- Un comparatif d'hébergement a été ajouté. La piste à faible coût recommandée pour une première version publique est Vercel pour le frontend + VPS x86 4 vCPU/8 Go pour API/PostGIS/workers + sauvegardes chiffrées R2 hors hôte. C'est une recommandation à valider, pas une infrastructure créée ou commandée.
+
+Les seuls points désormais certifiés sont donc la compilation, les tests automatisés locaux et le runner PostgreSQL jetable. La publication distante, l'audit final à zéro, les tests navigateur, le staging complet, les sauvegardes cloud restaurées, le choix/achat d'hébergement et le déploiement public restent à faire.
