@@ -1,0 +1,230 @@
+\set ON_ERROR_STOP on
+
+-- Validation transactionnelle : toutes les lignes synthétiques sont annulées.
+BEGIN;
+
+DO $$
+DECLARE
+  v_problem TEXT;
+  v_enabled BOOLEAN;
+  v_approved BOOLEAN;
+  v_place_id BIGINT;
+  v_offer_id BIGINT;
+BEGIN
+  SELECT string_agg(p.problem, '; ' ORDER BY p.problem)
+    INTO v_problem
+    FROM places_schema_problems() AS p(problem);
+  IF v_problem IS NOT NULL THEN
+    RAISE EXCEPTION 'places_schema_problems() signale des défauts : %', v_problem;
+  END IF;
+
+  INSERT INTO sources (id,name,base_url)
+  VALUES ('prompt26-test-source','Prompt26 test','https://example.test')
+  ON CONFLICT (id) DO NOTHING;
+
+  SELECT enabled, license_approved INTO v_enabled,v_approved
+    FROM sources WHERE id='prompt26-test-source';
+  IF v_enabled IS DISTINCT FROM FALSE OR v_approved IS DISTINCT FROM FALSE THEN
+    RAISE EXCEPTION 'Une nouvelle source doit être désactivée et non approuvée par défaut.';
+  END IF;
+
+  BEGIN
+    UPDATE sources SET enabled=TRUE WHERE id='prompt26-test-source';
+    RAISE EXCEPTION 'L’activation sans revue de licence aurait dû être refusée.';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    UPDATE sources SET license_approved=TRUE WHERE id='prompt26-test-source';
+    RAISE EXCEPTION 'Une approbation sans note ni date aurait dû être refusée.';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  UPDATE sources
+     SET license_approved=TRUE,
+         license_reviewed_at=NOW(),
+         license_review_note='Revue synthétique de test; aucune collecte réelle.',
+         enabled=TRUE
+   WHERE id='prompt26-test-source';
+
+  SELECT enabled, license_approved INTO v_enabled,v_approved
+    FROM sources WHERE id='prompt26-test-source';
+  IF v_enabled IS DISTINCT FROM TRUE OR v_approved IS DISTINCT FROM TRUE THEN
+    RAISE EXCEPTION 'Une source ne devient pas activable après revue documentée.';
+  END IF;
+
+  BEGIN
+    UPDATE sources
+       SET enabled=TRUE, license_approved=FALSE,
+           license_reviewed_at=NULL, license_review_note=NULL
+     WHERE id='prompt26-test-source';
+    RAISE EXCEPTION 'Une source active a conservé un état sans approbation.';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  INSERT INTO places (source_id,external_id,name,brand,brand_key,lat,lon,address)
+  VALUES ('prompt26-test-source','place-1','Lieu de test','Enseigne Test','enseigne-test',48.8566,2.3522,'{}'::jsonb)
+  RETURNING id INTO v_place_id;
+
+  INSERT INTO places (source_id,external_id,name,brand,brand_key,lat,lon,address)
+  VALUES ('prompt26-test-source','place-2','Second lieu de test','Enseigne Test','enseigne-test',48.8600,2.3600,'{}'::jsonb);
+
+  IF (SELECT COUNT(*) FROM places WHERE source_id='prompt26-test-source' AND brand_key='enseigne-test') <> 2 THEN
+    RAISE EXCEPTION 'Deux établissements distincts de la même enseigne doivent rester deux commerces.';
+  END IF;
+
+  BEGIN
+    INSERT INTO places (source_id,external_id,name,brand_key,lat,lon)
+    VALUES ('prompt26-test-source','place-1','Doublon','enseigne-test',48.8566,2.3522);
+    RAISE EXCEPTION 'Un doublon source_id/external_id a été accepté pour places.';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO places (source_id,external_id,name,brand_key,lat,lon)
+    VALUES ('prompt26-test-source','place-lat-invalid','Coordonnée invalide','enseigne-test',91,2.3522);
+    RAISE EXCEPTION 'Une latitude supérieure à 90 a été acceptée.';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO places (source_id,external_id,name,brand_key,lat,lon)
+    VALUES ('prompt26-test-source','place-lon-invalid','Coordonnée invalide','enseigne-test',48.8566,181);
+    RAISE EXCEPTION 'Une longitude supérieure à 180 a été acceptée.';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO offers (source_id,external_id,place_id,title,offer_type,scope,source_url,status)
+    VALUES ('prompt26-test-source','store-no-place',NULL,'Sans lieu','promotion','store','https://example.test/offer','draft');
+    RAISE EXCEPTION 'Une offre magasin sans place_id a été acceptée.';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO offers (source_id,external_id,place_id,title,offer_type,scope,source_url,status)
+    VALUES ('prompt26-test-source','store-bad-place',9223372036854770000,'Lieu absent','promotion','store','https://example.test/offer','draft');
+    RAISE EXCEPTION 'Une offre magasin liée à un place_id inexistant a été acceptée.';
+  EXCEPTION WHEN foreign_key_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO offers (source_id,external_id,place_id,brand_key,title,offer_type,scope,source_url,status)
+    VALUES ('prompt26-test-source','active-unverified',NULL,'enseigne-test','Active sans vérification','promotion','brand','https://example.test/offer','active');
+    RAISE EXCEPTION 'Une offre active sans verified_at/valid_until a été acceptée.';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO offers (source_id,external_id,place_id,brand_key,title,offer_type,scope,source_url,status,valid_from,valid_until)
+    VALUES ('prompt26-test-source','bad-date-range',NULL,'enseigne-test','Dates invalides','promotion','brand','https://example.test/offer','draft',DATE '2026-12-02',DATE '2026-12-01');
+    RAISE EXCEPTION 'Une offre dont valid_until précède valid_from a été acceptée.';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO offers (source_id,external_id,place_id,brand_key,title,offer_type,scope,source_url,status)
+    VALUES ('prompt26-test-source','bad-type',NULL,'enseigne-test','Type invalide','unknown','brand','https://example.test/offer','draft');
+    RAISE EXCEPTION 'Un offer_type inconnu a été accepté.';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO offers (source_id,external_id,place_id,brand_key,title,offer_type,scope,source_url,status)
+    VALUES ('prompt26-test-source','bad-scope',NULL,'enseigne-test','Scope invalide','promotion','unknown','https://example.test/offer','draft');
+    RAISE EXCEPTION 'Un scope inconnu a été accepté.';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO offers (source_id,external_id,place_id,brand_key,title,offer_type,scope,source_url,status)
+    VALUES ('prompt26-test-source','',NULL,'enseigne-test','ID externe vide','promotion','brand','https://example.test/offer','draft');
+    RAISE EXCEPTION 'Un identifiant externe vide a été accepté.';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO offers (source_id,external_id,place_id,brand_key,title,offer_type,scope,source_url,status)
+    VALUES ('prompt26-test-source','   ',NULL,'enseigne-test','ID externe blanc','promotion','brand','https://example.test/offer','draft');
+    RAISE EXCEPTION 'Un identifiant externe constitué d''espaces a été accepté.';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO offers (source_id,external_id,place_id,brand_key,title,offer_type,scope,source_url,status)
+    VALUES ('prompt26-test-source',repeat('x',161),NULL,'enseigne-test','ID externe trop long','promotion','brand','https://example.test/offer','draft');
+    RAISE EXCEPTION 'Un identifiant externe de plus de 160 caractères a été accepté.';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO offers (source_id,external_id,place_id,brand_key,title,offer_type,scope,source_url,status)
+    VALUES ('prompt26-test-source','brand-with-store',v_place_id,'enseigne-test','Offre enseigne mal liée','promotion','brand','https://example.test/offer','draft');
+    RAISE EXCEPTION 'Une offre brand liée à un magasin a été acceptée.';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO offers (source_id,external_id,place_id,brand_key,title,offer_type,scope,source_url,status)
+    VALUES ('prompt26-test-source','brand-without-key',NULL,'','Offre enseigne sans clé','promotion','brand','https://example.test/offer','draft');
+    RAISE EXCEPTION 'Une offre brand sans brand_key a été acceptée.';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  INSERT INTO offers (source_id,external_id,place_id,brand_key,title,offer_type,scope,source_url,status)
+  VALUES ('prompt26-test-source','offer-store-1',v_place_id,'enseigne-test','Offre magasin test','promotion','store','https://example.test/store-offer','draft')
+  RETURNING id INTO v_offer_id;
+
+  INSERT INTO offers (source_id,external_id,place_id,brand_key,title,offer_type,scope,source_url,status)
+  VALUES ('prompt26-test-source','offer-brand-1',NULL,'enseigne-test','Offre enseigne test','voucher','brand','https://example.test/brand-offer','draft');
+
+  INSERT INTO offers (source_id,external_id,place_id,brand_key,title,offer_type,scope,source_url,status)
+  VALUES ('prompt26-test-source','offer-online-1',NULL,'enseigne-test','Offre en ligne test','cashback','online','https://example.test/online-offer','draft');
+
+  BEGIN
+    INSERT INTO offers (source_id,external_id,place_id,brand_key,title,offer_type,scope,source_url,status)
+    VALUES ('prompt26-test-source','offer-store-1',v_place_id,'enseigne-test','Doublon offre','promotion','store','https://example.test/store-offer','draft');
+    RAISE EXCEPTION 'Un doublon source_id/external_id a été accepté pour offers.';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+
+  BEGIN
+    DELETE FROM places WHERE id=v_place_id;
+    RAISE EXCEPTION 'La suppression d’un commerce lié à une offre magasin aurait dû être refusée.';
+  EXCEPTION WHEN foreign_key_violation THEN NULL;
+  END;
+
+  IF NOT EXISTS (SELECT 1 FROM places WHERE id=v_place_id) THEN
+    RAISE EXCEPTION 'Le commerce a disparu malgré une offre magasin liée.';
+  END IF;
+
+  BEGIN
+    INSERT INTO offers (source_id,external_id,place_id,brand_key,title,offer_type,scope,source_url,status)
+    VALUES ('prompt26-test-source','bad-status',NULL,'enseigne-test','Statut invalide','promotion','brand','https://example.test/offer','unknown');
+    RAISE EXCEPTION 'Un statut d’offre inconnu a été accepté.';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  INSERT INTO offer_sync_runs (source_id,status,offers_seen,offers_upserted)
+  VALUES ('prompt26-test-source','success',1,1),
+         ('prompt26-test-source','partial',2,1),
+         ('prompt26-test-source','failed',0,0);
+
+  BEGIN
+    INSERT INTO offer_sync_runs (source_id,status)
+    VALUES ('prompt26-test-source','unknown');
+    RAISE EXCEPTION 'Un statut de synchronisation inconnu a été accepté.';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  IF (SELECT COUNT(*) FROM offers WHERE source_id='prompt26-test-source') <> 3 THEN
+    RAISE EXCEPTION 'Le nombre d’offres valides ne correspond pas aux insertions attendues.';
+  END IF;
+  IF (SELECT COUNT(*) FROM offer_sync_runs WHERE source_id='prompt26-test-source') <> 3 THEN
+    RAISE EXCEPTION 'Les trois statuts de journalisation n’ont pas été acceptés.';
+  END IF;
+END $$;
+
+ROLLBACK;
+SELECT 'PLACES_OFFERS_SCHEMA_OK' AS validation,
+       'tests synthétiques annulés par ROLLBACK' AS isolation;

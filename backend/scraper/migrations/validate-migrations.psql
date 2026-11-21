@@ -1,0 +1,131 @@
+\set ON_ERROR_STOP on
+
+-- Disposable schema-level check for the three manual migrations in this folder.
+-- All tables are TEMP and disappear when this psql session ends.
+-- Run only against a disposable local database; never point this at production.
+
+CREATE TEMP TABLE offers (
+  id BIGSERIAL PRIMARY KEY,
+  source_id TEXT NOT NULL,
+  external_id TEXT,
+  status TEXT NOT NULL DEFAULT 'draft',
+  verified_at TIMESTAMPTZ,
+  valid_from DATE,
+  valid_until DATE
+);
+
+CREATE TEMP TABLE scrape_jobs (
+  id BIGSERIAL PRIMARY KEY,
+  status TEXT NOT NULL,
+  started_at TIMESTAMPTZ
+);
+
+INSERT INTO scrape_jobs (status, started_at)
+VALUES ('running', NOW() - INTERVAL '2 hours');
+
+\ir 20261114_offer_validity_constraints.sql
+\ir 20261114_offer_external_ids.sql
+\ir 20261114_scrape_job_leases.sql
+
+DO $$
+DECLARE
+  running_started_at TIMESTAMPTZ;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'offers'::regclass
+       AND conname = 'offers_active_validity_check'
+  ) THEN
+    RAISE EXCEPTION 'Active-offer validity constraint was not created';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'offers'::regclass
+       AND conname = 'offers_date_range_check'
+  ) THEN
+    RAISE EXCEPTION 'Offer date-range constraint was not created';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'offers'::regclass
+       AND conname = 'offers_external_id_nonempty_check'
+  ) THEN
+    RAISE EXCEPTION 'Offer external-id constraint was not created';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_attribute
+     WHERE attrelid = 'scrape_jobs'::regclass
+       AND attname = 'heartbeat_at'
+       AND NOT attisdropped
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_attribute
+     WHERE attrelid = 'scrape_jobs'::regclass
+       AND attname = 'lease_token'
+       AND NOT attisdropped
+  ) THEN
+    RAISE EXCEPTION 'Scrape-job lease columns were not created';
+  END IF;
+
+  SELECT heartbeat_at INTO running_started_at
+    FROM scrape_jobs
+   WHERE status = 'running';
+
+  IF running_started_at IS NULL THEN
+    RAISE EXCEPTION 'Existing running job heartbeat was not backfilled';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_index
+     WHERE indexrelid = to_regclass('scrape_jobs_lease_idx')
+       AND indrelid = 'scrape_jobs'::regclass
+  ) THEN
+    RAISE EXCEPTION 'Scrape-job lease index was not created';
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  BEGIN
+    INSERT INTO offers (source_id, external_id, status)
+    VALUES ('migration-test', 'invalid-active', 'active');
+    RAISE EXCEPTION 'Expected active-offer validity constraint to reject a row';
+  EXCEPTION WHEN check_violation THEN
+    NULL;
+  END;
+
+  BEGIN
+    INSERT INTO offers (source_id, external_id, valid_from, valid_until)
+    VALUES ('migration-test', 'invalid-dates', DATE '2026-11-02', DATE '2026-11-01');
+    RAISE EXCEPTION 'Expected date-range constraint to reject a row';
+  EXCEPTION WHEN check_violation THEN
+    NULL;
+  END;
+
+  BEGIN
+    INSERT INTO offers (source_id, external_id, status)
+    VALUES ('migration-test', '', 'draft');
+    RAISE EXCEPTION 'Expected empty external ID to be rejected';
+  EXCEPTION WHEN check_violation THEN
+    NULL;
+  END;
+
+  INSERT INTO offers (source_id, external_id, status, verified_at, valid_from, valid_until)
+  VALUES (
+    'migration-test',
+    'valid-active',
+    'active',
+    NOW(),
+    CURRENT_DATE,
+    CURRENT_DATE + 1
+  );
+END $$;
+
+-- Reapplying all three scripts must be safe on an already-migrated schema.
+\ir 20261114_offer_validity_constraints.sql
+\ir 20261114_offer_external_ids.sql
+\ir 20261114_scrape_job_leases.sql
+
+SELECT 'Migration checks passed using temporary tables only.' AS result;

@@ -1,0 +1,17 @@
+﻿.env
+.env.*
+.git
+.crawlee/
+backups/
+coverage/
+data/
+dist/
+node_modules/
+storage/
+*.log
+*.pid
+*.sqlite*
+*.db
+*.dump
+*.bak
+*.backup

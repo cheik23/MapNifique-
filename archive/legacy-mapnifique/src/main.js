@@ -1,4 +1,5 @@
 import './style.css';
+import { createPlacesExperience } from './services/places-experience.js';
 
 // html5-qrcode for barcode scanning
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
@@ -585,88 +586,167 @@ function removeSearchMarkers() {
 // Sur PC, la géolocalisation native échoue souvent (absence de GPS, permission
 // refusée, timeout) : on garantit toujours une position exploitable.
 // ---------------------------------------------------------------------------
-const PARIS_FALLBACK = { lat: 48.8566, lon: 2.3522, city: 'Paris' };
-const GEOLOCATION_TIMEOUT_MS = 3000;
+
+const PARIS_FALLBACK = {
+  lat: 48.8566,
+  lon: 2.3522,
+  city: 'Paris',
+  source: 'paris',
+};
+const GEOLOCATION_TIMEOUT_MS = 15000;
+const GEOLOCATION_STANDARD_TIMEOUT_MS = 7000;
 const IP_LOOKUP_TIMEOUT_MS = 5000;
 
 /**
- * Position approximative déduite de l'adresse IP (aucune clé requise).
- * @returns {Promise<{lat: number, lon: number, city: string}>}
+ * Position approximative déduite de l'adresse IP.
  */
 const getFallbackLocation = async () => {
   const providers = [
     {
       url: 'https://ipwho.is/',
-      read: (data) => (data && data.success !== false && Number.isFinite(Number(data.latitude))
-        ? { lat: Number(data.latitude), lon: Number(data.longitude), city: data.city || '' }
-        : null),
+      read: (data) => (
+        data && data.success !== false &&
+        Number.isFinite(Number(data.latitude)) &&
+        Number.isFinite(Number(data.longitude))
+          ? {
+              lat: Number(data.latitude),
+              lon: Number(data.longitude),
+              city: data.city || '',
+              source: 'ip',
+            }
+          : null
+      ),
     },
     {
       url: 'https://ipapi.co/json/',
-      read: (data) => (data && Number.isFinite(Number(data.latitude))
-        ? { lat: Number(data.latitude), lon: Number(data.longitude), city: data.city || '' }
-        : null),
+      read: (data) => (
+        data &&
+        Number.isFinite(Number(data.latitude)) &&
+        Number.isFinite(Number(data.longitude))
+          ? {
+              lat: Number(data.latitude),
+              lon: Number(data.longitude),
+              city: data.city || '',
+              source: 'ip',
+            }
+          : null
+      ),
     },
   ];
 
   for (const provider of providers) {
     try {
-      const response = await fetch(provider.url, { signal: AbortSignal.timeout(IP_LOOKUP_TIMEOUT_MS) });
+      const response = await fetch(provider.url, {
+        signal: AbortSignal.timeout(IP_LOOKUP_TIMEOUT_MS),
+      });
       if (!response.ok) continue;
+
       const location = provider.read(await response.json());
       if (location) return location;
     } catch (error) {
-      console.warn('[Localisation] Repli IP indisponible :', provider.url, error?.message || error);
+      console.warn(
+        '[Localisation] Repli IP indisponible :',
+        provider.url,
+        error?.message || error
+      );
     }
   }
 
-  // Dernier recours : centre de Paris.
   return { ...PARIS_FALLBACK };
 };
 
 /**
- * Position utilisable par l'app : navigateur (3 s) puis repli IP.
- * @returns {Promise<{lat: number, lon: number, city: string, approximate: boolean}>}
+ * Convertit uniquement les coordonnées et la précision réellement fournies
+ * par le navigateur. Une précision absente ou invalide reste inconnue.
  */
-const resolveLocation = async () => {
-  const precise = await new Promise((resolve) => {
-    if (!navigator.geolocation) return resolve(null);
+const browserLocationFromPosition = (position) => {
+  const rawAccuracy = Number(position.coords.accuracy);
+  const accuracy = Number.isFinite(rawAccuracy) && rawAccuracy > 0
+    ? rawAccuracy
+    : null;
 
-    // Le "timeout" de l'API géolocalisation ne démarre qu'une fois la
-    // permission accordée : si l'utilisateur ne répond jamais à la demande,
-    // aucun callback n'arrive et la promesse resterait pendante. Ce minuteur
-    // dur garantit qu'on retombe toujours sur le repli.
+  return {
+    lat: position.coords.latitude,
+    lon: position.coords.longitude,
+    city: '',
+    source: 'browser',
+    accuracy,
+    approximate: accuracy === null || accuracy > 100,
+  };
+};
+
+/**
+ * Demande une position au navigateur avec les options indiquées.
+ * Retourne aussi le code d'erreur pour distinguer un refus de permission.
+ */
+const requestBrowserLocation = (enableHighAccuracy, timeoutMs) =>
+  new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      return resolve({ location: null, errorCode: 0 });
+    }
+
     let settled = false;
     let timer = null;
-    const finish = (value) => {
+
+    const finish = (location, errorCode = null) => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
-      resolve(value);
+      resolve({ location, errorCode });
     };
 
-    timer = setTimeout(() => finish(null), GEOLOCATION_TIMEOUT_MS + 500);
+    timer = setTimeout(() => finish(null, 3), timeoutMs + 1000);
 
     try {
       navigator.geolocation.getCurrentPosition(
-        (position) => finish({
-          lat: position.coords.latitude,
-          lon: position.coords.longitude,
-          city: '',
-        }),
-        () => finish(null),
-        { enableHighAccuracy: false, timeout: GEOLOCATION_TIMEOUT_MS, maximumAge: 300000 }
+        (position) => finish(browserLocationFromPosition(position)),
+        (error) => {
+          console.warn(
+            '[Localisation] Position navigateur indisponible :',
+            error?.message || error
+          );
+          finish(null, error?.code ?? null);
+        },
+        {
+          enableHighAccuracy,
+          timeout: timeoutMs,
+          maximumAge: 0,
+        }
       );
     } catch (error) {
-      console.warn('[Localisation] Géolocalisation indisponible :', error?.message || error);
-      finish(null);
+      console.warn('[Localisation] Erreur navigateur :', error);
+      finish(null, null);
     }
   });
 
-  if (precise) return { ...precise, approximate: false };
+/**
+ * Essaie la haute précision, puis le mode standard.
+ * En dernier recours : localisation IP, puis position de Paris.
+ */
+const resolveLocation = async () => {
+  const highAccuracy = await requestBrowserLocation(
+    true,
+    GEOLOCATION_TIMEOUT_MS
+  );
+
+  if (highAccuracy.location) return highAccuracy.location;
+
+  // Un refus explicite de permission ne sera pas suivi d'une seconde demande.
+  if (highAccuracy.errorCode !== 1 && navigator.geolocation) {
+    const standard = await requestBrowserLocation(
+      false,
+      GEOLOCATION_STANDARD_TIMEOUT_MS
+    );
+
+    if (standard.location) return standard.location;
+  }
 
   const fallback = await getFallbackLocation();
-  return { ...fallback, approximate: true };
+  return {
+    ...fallback,
+    approximate: true,
+    accuracy: null,
+  };
 };
 
 // Pulse animation style injection for the microphone button
@@ -785,6 +865,14 @@ document.addEventListener('DOMContentLoaded', () => {
           .openPopup();
         map.invalidateSize();
         setTimeout(() => { if (map) map.invalidateSize(); }, 200);
+
+        // Première localisation automatique, une seule fois.
+        setTimeout(() => {
+          if (!autoLocationAttempted) {
+            autoLocationAttempted = true;
+            void startPositionTracking();
+          }
+        }, 0);
       }
     };
 
@@ -805,6 +893,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const appElement = document.querySelector('#app')
     || document.getElementById('view-carte')
     || document.getElementById('views');
+
+  // Le bouton GPS doit être réellement présent dans la vue Carte.
+  if (appElement && !appElement.contains(positionBtn)) {
+    appElement.appendChild(positionBtn);
+  }
 
   // Offline banner elements
   const offlineBanner = document.getElementById('offline-banner');
@@ -1004,38 +1097,204 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Handle position button click — GPS (3 s), puis repli par IP, puis Paris.
-  positionBtn.addEventListener('click', async () => {
-    setButtonLoading(true);
 
-    const location = await resolveLocation();
-    if (!map) {
-      setButtonLoading(false);
-      return;
+  // Position courante et suivi GPS continu.
+  let positionWatchId = null;
+  let positionRequestInProgress = false;
+  let autoLocationAttempted = false;
+
+  const displayUserLocation = (location, centerMap = true, notify = true) => {
+    if (!map || !location) return;
+
+    const isBrowserPosition = location.source === 'browser';
+    const approximate = location.approximate || !isBrowserPosition;
+
+    if (centerMap) {
+      map.setView(
+        [location.lat, location.lon],
+        approximate ? 12 : 16
+      );
     }
-
-    // Zoom plus large quand la position est approximative.
-    map.setView([location.lat, location.lon], location.approximate ? 12 : 15);
 
     if (window.currentMarker) {
       map.removeLayer(window.currentMarker);
     }
 
-    // Marqueur bleu = GPS précis, orange = position approximative (IP).
-    window.currentMarker = L.circleMarker([location.lat, location.lon], {
-      radius: 12,
-      fillColor: location.approximate ? '#f9a825' : '#3b82f6',
-      color: '#ffffff',
-      weight: 2,
-      fillOpacity: 0.8,
-    }).addTo(map);
-
-    if (location.approximate) {
-      showToast('Localisation approximative utilisée (via IP)', 'warning');
+    if (window.currentAccuracyCircle) {
+      map.removeLayer(window.currentAccuracyCircle);
+      window.currentAccuracyCircle = null;
     }
 
-    setButtonLoading(false);
+    window.currentMarker = L.circleMarker(
+      [location.lat, location.lon],
+      {
+        radius: 9,
+        fillColor: approximate ? '#f9a825' : '#2563eb',
+        color: '#ffffff',
+        weight: 3,
+        fillOpacity: 0.95,
+      }
+    ).addTo(map);
+
+    window.currentMarker.bindPopup(
+      approximate
+        ? 'Position approximative'
+        : 'Position du navigateur'
+    );
+
+    if (
+      isBrowserPosition &&
+      Number.isFinite(location.accuracy) &&
+      location.accuracy > 0
+    ) {
+      window.currentAccuracyCircle = L.circle(
+        [location.lat, location.lon],
+        {
+          radius: location.accuracy,
+          color: '#2563eb',
+          weight: 1,
+          fillColor: '#3b82f6',
+          fillOpacity: 0.12,
+        }
+      ).addTo(map);
+    }
+
+    if (notify) {
+      if (location.source === 'ip') {
+        showToast('Position approximative déterminée par IP', 'warning');
+      } else if (location.source === 'paris') {
+        showToast('Localisation indisponible : centre de Paris utilisé', 'warning');
+      } else if (location.approximate) {
+        const hasKnownAccuracy = Number.isFinite(location.accuracy)
+          && location.accuracy > 0;
+        const message = hasKnownAccuracy
+          ? `Position du navigateur : précision annoncée ${Math.round(location.accuracy)} m`
+          : 'Position du navigateur : précision non communiquée';
+        showToast(message, 'warning');
+      }
+    }
+  };
+
+  const stopPositionTracking = () => {
+    if (positionWatchId !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(positionWatchId);
+    }
+    positionWatchId = null;
+    positionBtn.innerHTML = 'Ma position';
+    positionBtn.setAttribute('aria-pressed', 'false');
+  };
+
+  const startPositionTracking = async () => {
+    if (positionWatchId !== null || positionRequestInProgress) return;
+
+    positionRequestInProgress = true;
+    positionBtn.disabled = true;
+    positionBtn.textContent = 'Demande GPS…';
+
+    try {
+      if (!navigator.geolocation) {
+        positionBtn.textContent = 'GPS indisponible';
+        showToast('Ce navigateur ne prend pas en charge la géolocalisation.', 'warning');
+        return;
+      }
+
+      // Vérifier si le navigateur a déjà bloqué cette autorisation.
+      let permissionState = 'prompt';
+      try {
+        const permission = await navigator.permissions?.query({ name: 'geolocation' });
+        if (permission?.state) permissionState = permission.state;
+      } catch {
+        // Certains navigateurs ne proposent pas l'API Permissions.
+      }
+
+      if (permissionState === 'denied') {
+        positionBtn.textContent = 'Autoriser GPS';
+        showToast(
+          'Localisation bloquée par le navigateur. Autorisez-la dans les paramètres du site, puis réessayez.',
+          'warning'
+        );
+        return;
+      }
+
+      // Première tentative : position GPS haute précision.
+      let result = await requestBrowserLocation(true, GEOLOCATION_TIMEOUT_MS);
+      let location = result.location;
+      let errorCode = result.errorCode;
+
+      // Deuxième tentative uniquement si le GPS n'a pas été explicitement refusé.
+      if (!location && errorCode !== 1) {
+        result = await requestBrowserLocation(false, GEOLOCATION_STANDARD_TIMEOUT_MS);
+        location = result.location;
+        errorCode = result.errorCode;
+      }
+
+      // Ne jamais confondre une position IP ou Paris avec une position GPS.
+      if (!location) {
+        if (errorCode === 1) {
+          positionBtn.textContent = 'Autoriser GPS';
+          showToast('Autorisation GPS refusée. Réactivez la localisation pour ce site dans Edge.', 'warning');
+        } else {
+          positionBtn.textContent = 'Réessayer GPS';
+          showToast('Position GPS non obtenue. Vérifiez le GPS de votre appareil et réessayez.', 'warning');
+        }
+        return;
+      }
+
+      displayUserLocation(location, true, false);
+
+      positionWatchId = navigator.geolocation.watchPosition(
+        (position) => {
+          if (positionWatchId === null) return;
+          displayUserLocation(browserLocationFromPosition(position), true, false);
+        },
+        (error) => {
+          console.warn('[Localisation] Suivi GPS :', error?.message || error);
+
+          if (error.code === 1) {
+            stopPositionTracking();
+            positionBtn.textContent = 'Autoriser GPS';
+            showToast('Autorisation GPS retirée. Vérifiez les permissions du site.', 'warning');
+          } else if (error.code === 2) {
+            showToast('Signal GPS momentanément indisponible.', 'warning');
+          } else if (error.code === 3) {
+            showToast('Le suivi GPS prend du temps. Nouvelle position en attente.', 'warning');
+          }
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 20000,
+          maximumAge: 0,
+        }
+      );
+
+      positionBtn.textContent = '📍 Position active';
+      positionBtn.setAttribute('aria-pressed', 'true');
+      showToast('Position GPS réelle obtenue.', 'success');
+
+    } catch (error) {
+      console.error('[Localisation] Erreur :', error);
+      positionBtn.textContent = 'Réessayer GPS';
+      showToast('Impossible de démarrer le suivi GPS.', 'warning');
+    } finally {
+      positionRequestInProgress = false;
+      positionBtn.disabled = false;
+      if (positionWatchId === null && positionBtn.textContent === 'Demande GPS…') {
+        positionBtn.textContent = 'Ma position';
+      }
+    }
+  };
+
+  positionBtn.addEventListener('click', () => {
+    if (positionWatchId !== null) {
+      stopPositionTracking();
+      showToast('Suivi GPS arrêté', 'info');
+      return;
+    }
+
+    void startPositionTracking();
   });
+
+  window.addEventListener('pagehide', stopPositionTracking);
 
   // Search state
   let isSearching = false;
@@ -1050,6 +1309,28 @@ document.addEventListener('DOMContentLoaded', () => {
   const searchInput = document.getElementById('search-input');
   const searchBtn = document.getElementById('search-btn');
   const voiceToggleBtn = document.getElementById('voice-toggle-btn');
+
+  // Expérience Google Maps / découverte : liste, fiche détaillée et avantages liés au lieu.
+  const discoveryExperience = createPlacesExperience({
+    getMap: () => map,
+    onRoute: (place) => {
+      const input = document.getElementById('input-arrivee');
+      const button = document.getElementById('btn-route');
+      if (!input || !button) {
+        showToast('Le planificateur d’itinéraire est indisponible.', 'warning');
+        return;
+      }
+      const tags = place.tags || {};
+      const address = [tags['addr:housenumber'], tags['addr:street'], tags['addr:postcode'], tags['addr:city']].filter(Boolean).join(' ');
+      const label = tags.name || tags.brand || 'Établissement';
+      window.MapNifiqueRouteDestination = {
+        lat: Number(place.lat), lon: Number(place.lon),
+        label, address: address || (Number(place.lat).toFixed(6) + ', ' + Number(place.lon).toFixed(6)),
+      };
+      input.value = [label, address].filter(Boolean).join(', ');
+      button.click();
+    },
+  });
 
   // -------------------------------------------------------------------------
   // Recherche par catégorie (tags OSM via Overpass)
@@ -1217,17 +1498,21 @@ document.addEventListener('DOMContentLoaded', () => {
   // Construit la requête Overpass : par tag OSM, sinon par nom.
   const buildOverpassQuery = (center, osmTag, textQuery) => {
     const around = `(around:${SEARCH_RADIUS_M},${center.lat},${center.lng})`;
-    const selector = osmTag
-      ? `[${osmTag}]`
-      : `["name"~"${String(textQuery).replace(/["\\]/g, '\\$&')}",i]`;
-    return `[out:json][timeout:25];(node${selector}${around};way${selector}${around};relation${selector}${around};);out center 40;`;
+    const categoryTags = osmTag === 'shop=beauty'
+      ? ['shop=beauty', 'shop=cosmetics', 'shop=perfumery']
+      : (osmTag ? [osmTag] : []);
+    const selectors = categoryTags.length
+      ? categoryTags.map((item) => `[${item}]`)
+      : [`["name"~"${String(textQuery).replace(/["\\]/g, '\\$&')}",i]`];
+    const blocks = selectors.map((selector) => `node${selector}${around};way${selector}${around};relation${selector}${around};`).join('');
+    return `[out:json][timeout:25];(${blocks});out center 40;`;
   };
 
   // Couleur/icône par famille de tag, pour distinguer les résultats sur la carte.
   const markerColorFor = (tags = {}) => {
     if (tags.amenity === 'restaurant' || tags.amenity === 'fast_food' || tags.amenity === 'cafe') return '#e8590c';
     if (tags.amenity === 'pharmacy') return '#2f9e44';
-    if (tags.shop === 'beauty' || tags.shop === 'hairdresser') return '#c2255c';
+    if (['beauty', 'cosmetics', 'perfumery', 'hairdresser'].includes(tags.shop)) return '#c2255c';
     if (tags.shop === 'clothes') return '#7048e8';
     if (tags.shop === 'supermarket' || tags.shop === 'convenience') return '#1976d2';
     return '#1976d2';
@@ -1270,10 +1555,17 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const center = await getSearchCenter();
       if (!center || searchId !== latestSearchId) return;
-      const places = await fetchPlaces(center, tag, textQuery, rawLabel);
+      let openMapPlaces = [];
+      try {
+        openMapPlaces = await fetchPlaces(center, tag, textQuery, rawLabel);
+      } catch (sourceError) {
+        console.warn('[Recherche] Sources cartographiques indisponibles ; complément local tenté.', sourceError);
+      }
+      const places = await discoveryExperience.mergeLocalPlaces(openMapPlaces, center, textQuery, tag, SEARCH_RADIUS_M);
       // Une recherche plus recente a pris la main : on jette ce resultat.
       if (searchId !== latestSearchId) return;
 
+      discoveryExperience.renderResults(places, center, rawLabel || textQuery || tag || 'Résultats');
       removeSearchMarkers();
 
       places.forEach((place) => {
@@ -1290,6 +1582,7 @@ document.addEventListener('DOMContentLoaded', () => {
           .filter(Boolean)
           .join(' ');
         marker.bindPopup(`<strong>${escapeHtml(label)}</strong>${address ? `<br>${escapeHtml(address)}` : ''}`);
+        marker.on('click', () => discoveryExperience.showDetails(place, center));
         searchMarkers.push(marker);
       });
 
@@ -1329,6 +1622,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (alreadyActive) {
         removeSearchMarkers();
+        discoveryExperience.close();
         return;
       }
 
@@ -1343,6 +1637,7 @@ document.addEventListener('DOMContentLoaded', () => {
       setActiveFilterButton(null);
       if (searchInput) searchInput.value = '';
       removeSearchMarkers();
+      discoveryExperience.close();
     });
   }
 
@@ -1690,7 +1985,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
-      const destination = await geocodeAddress(arriveeQuery);
+      const pinnedDestination = window.MapNifiqueRouteDestination;
+      const destination = pinnedDestination && Number.isFinite(Number(pinnedDestination.lat)) && Number.isFinite(Number(pinnedDestination.lon))
+        ? { lat: Number(pinnedDestination.lat), lon: Number(pinnedDestination.lon), label: pinnedDestination.label || arriveeQuery, address: pinnedDestination.address || arriveeQuery }
+        : await geocodeAddress(arriveeQuery);
+      window.MapNifiqueRouteDestination = null;
       if (!destination) {
         showToast(`Adresse introuvable : ${arriveeQuery}`, 'error');
         return;

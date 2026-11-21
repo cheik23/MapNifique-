@@ -1,0 +1,191 @@
+\set ON_ERROR_STOP on
+
+-- Validation de la migration identité sur une base JETABLE uniquement.
+-- Prérequis : 20261120_000_baseline_schema.sql puis 20261120_001_product_identity.sql.
+-- Toutes les écritures sont annulées par ROLLBACK en fin de script.
+
+DO $$
+BEGIN
+  IF (SELECT version FROM schema_state WHERE singleton) <> 1 THEN
+    RAISE EXCEPTION 'Version attendue 1 après la migration 001';
+  END IF;
+END $$;
+
+-- 1. GTIN-8/12/13/14 : normalisation et chiffre de contrôle GS1.
+DO $$
+BEGIN
+  IF identity_gtin_valid('12345670') IS NOT TRUE OR identity_gtin_normalize('12345670') <> '00000012345670' THEN
+    RAISE EXCEPTION 'GTIN-8 12345670 devrait être valide et normalisé';
+  END IF;
+  IF identity_gtin_valid('12345671') IS NOT FALSE THEN RAISE EXCEPTION 'GTIN-8 invalide accepté'; END IF;
+  IF identity_gtin_valid('036000291452') IS NOT TRUE OR identity_gtin_normalize('036000291452') <> '00036000291452' THEN
+    RAISE EXCEPTION 'GTIN-12 036000291452 devrait être valide et normalisé';
+  END IF;
+  IF identity_gtin_valid('036000291453') IS NOT FALSE THEN RAISE EXCEPTION 'GTIN-12 invalide accepté'; END IF;
+  IF identity_gtin_valid('4006381333931') IS NOT TRUE OR identity_gtin_normalize('4006381333931') <> '04006381333931' THEN
+    RAISE EXCEPTION 'GTIN-13 4006381333931 devrait être valide et normalisé';
+  END IF;
+  IF identity_gtin_valid('4006381333932') IS NOT FALSE THEN RAISE EXCEPTION 'GTIN-13 invalide accepté'; END IF;
+  IF identity_gtin_valid('04006381333931') IS NOT TRUE THEN RAISE EXCEPTION 'GTIN-14 valide refusé'; END IF;
+  IF identity_gtin_valid('04006381333932') IS NOT FALSE THEN RAISE EXCEPTION 'GTIN-14 invalide accepté'; END IF;
+  IF identity_gtin_valid('SKU-123') IS NOT FALSE THEN RAISE EXCEPTION 'Un SKU ne doit jamais être un GTIN'; END IF;
+END $$;
+
+BEGIN;
+
+INSERT INTO sources (id, name, base_url)
+VALUES ('identity-test', 'Identity Test', 'https://identity.example');
+
+INSERT INTO scrape_jobs (source_id, start_urls, max_pages, status)
+VALUES ('identity-test', '[]'::jsonb, 10, 'running');
+
+-- 2. Un alias ne peut désigner qu'un produit par source.
+DO $$
+DECLARE
+  first_product BIGINT;
+  second_product BIGINT;
+BEGIN
+  INSERT INTO products (source_id, product_url, name, identity_key)
+  VALUES ('identity-test', 'https://identity.example/p/1', 'Produit 1', 'g:04006381333931')
+  RETURNING id INTO first_product;
+
+  INSERT INTO products (source_id, product_url, name, identity_key)
+  VALUES ('identity-test', 'https://identity.example/p/2', 'Produit 2', 'g:04006381333932')
+  RETURNING id INTO second_product;
+
+  INSERT INTO product_identifiers (product_id, namespace, source_id, value, kind, evidence)
+  VALUES (first_product, 'gtin', 'identity-test', '04006381333931', 'primary', 'test');
+
+  BEGIN
+    INSERT INTO product_identifiers (product_id, namespace, source_id, value, kind, evidence)
+    VALUES (second_product, 'gtin', 'identity-test', '04006381333931', 'primary', 'test');
+    RAISE EXCEPTION 'Un alias identique a été accepté pour deux produits';
+  EXCEPTION WHEN unique_violation THEN
+    NULL;
+  END;
+
+  BEGIN
+    INSERT INTO product_identifiers (product_id, namespace, source_id, value, kind, evidence)
+    VALUES (second_product, 'gtin', 'identity-test', '4006381333931', 'primary', 'test');
+    RAISE EXCEPTION 'Un GTIN non canonique a été accepté';
+  EXCEPTION WHEN check_violation THEN
+    NULL;
+  END;
+
+  BEGIN
+    INSERT INTO product_identifiers (product_id, namespace, source_id, value, kind, evidence)
+    VALUES (second_product, 'gtin', 'identity-test', '04006381333932', 'primary', 'test');
+    RAISE EXCEPTION 'Un GTIN-14 au chiffre de contrôle invalide a été accepté';
+  EXCEPTION WHEN check_violation THEN
+    NULL;
+  END;
+END $$;
+
+-- 3. Un candidat finalisé ne peut pas être supprimé hors maintenance.
+DO $$
+DECLARE
+  v_job_id BIGINT;
+  candidate_id BIGINT;
+BEGIN
+  SELECT id INTO v_job_id FROM scrape_jobs WHERE source_id='identity-test' LIMIT 1;
+
+  INSERT INTO product_candidates
+    (job_id, source_id, discovery_key, identity_key, product_url, discovered_from, name, status)
+  VALUES (v_job_id, 'identity-test', 'discovery-1', 'g:04006381333931',
+          'https://identity.example/p/1', 'https://identity.example/c', 'Produit 1', 'finalized')
+  RETURNING id INTO candidate_id;
+
+  BEGIN
+    DELETE FROM product_candidates WHERE id=candidate_id;
+    RAISE EXCEPTION 'La suppression d''un candidat finalisé a été acceptée';
+  EXCEPTION WHEN SQLSTATE 'MN003' THEN
+    NULL;
+  END;
+
+  PERFORM set_config('mapnifique.maintenance', 'on', TRUE);
+  DELETE FROM product_candidates WHERE id=candidate_id;
+  PERFORM set_config('mapnifique.maintenance', 'off', TRUE);
+END $$;
+
+-- 4. Purge : jamais une anomalie non revue.
+DO $$
+DECLARE
+  v_job_id BIGINT;
+  result RECORD;
+BEGIN
+  SELECT id INTO v_job_id FROM scrape_jobs WHERE source_id='identity-test' LIMIT 1;
+  UPDATE scrape_jobs SET status='completed', finished_at=NOW() - INTERVAL '30 days' WHERE id=v_job_id;
+
+  INSERT INTO product_candidates
+    (job_id, source_id, discovery_key, identity_key, discovered_from, name, status)
+  VALUES (v_job_id, 'identity-test', 'discovery-2', 'u:https://identity.example/p/2',
+          'https://identity.example/c', 'Produit 2', 'staged');
+
+  INSERT INTO product_identity_anomalies (job_id, source_id, kind, detail, created_at, reviewed_at)
+  VALUES (v_job_id, 'identity-test', 'test-archive', '{}'::jsonb,
+          NOW() - INTERVAL '30 days', NOW() - INTERVAL '29 days');
+
+  INSERT INTO product_identity_anomalies (job_id, source_id, candidate_id, kind, detail)
+  SELECT v_job_id, 'identity-test', c.id, 'test-open', '{}'::jsonb
+    FROM product_candidates c WHERE c.job_id=v_job_id AND c.discovery_key='discovery-2';
+
+  INSERT INTO product_candidates
+    (job_id, source_id, discovery_key, identity_key, discovered_from, name, status)
+  VALUES (v_job_id, 'identity-test', 'discovery-3', 'u:https://identity.example/p/3',
+          'https://identity.example/c', 'Produit purgable', 'staged');
+
+  INSERT INTO product_candidates
+    (job_id, source_id, discovery_key, identity_key, discovered_from, name, status)
+  VALUES (v_job_id, 'identity-test', 'discovery-4', 'u:https://identity.example/p/4',
+          'https://identity.example/c', 'Produit lié à une anomalie partagée', 'staged');
+
+  INSERT INTO product_identity_anomalies (job_id, source_id, candidate_id, kind, detail)
+  SELECT v_job_id, 'identity-test', c2.id, 'test-shared-open',
+         jsonb_build_object('candidateIds', jsonb_build_array(c2.id, c4.id))
+    FROM product_candidates c2
+    CROSS JOIN product_candidates c4
+   WHERE c2.job_id=v_job_id AND c2.discovery_key='discovery-2'
+     AND c4.job_id=v_job_id AND c4.discovery_key='discovery-4';
+
+  SELECT * INTO result FROM identity_purge_stale_candidates(7, 1);
+
+  IF result.candidates_deleted <> 1 THEN
+    RAISE EXCEPTION 'La purge devrait supprimer le candidat sans anomalie et conserver celui avec anomalie';
+  END IF;
+  IF EXISTS (SELECT 1 FROM product_candidates WHERE discovery_key='discovery-3') THEN
+    RAISE EXCEPTION 'Le candidat sans anomalie aurait dû être purgé';
+  END IF;
+  IF result.anomalies_archived < 1 THEN
+    RAISE EXCEPTION 'La purge n''a archivé aucune anomalie revue';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM product_identity_anomalies
+     WHERE kind='test-open' AND reviewed_at IS NULL
+  ) THEN
+    RAISE EXCEPTION 'Une anomalie non revue a été purgée';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM product_candidates c
+    JOIN product_identity_anomalies a ON a.candidate_id=c.id
+    WHERE c.discovery_key='discovery-2' AND a.kind='test-open' AND a.reviewed_at IS NULL
+  ) THEN
+    RAISE EXCEPTION 'Un candidat lié à une anomalie non revue a été purgé';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM product_candidates c
+    JOIN product_identity_anomalies a
+      ON a.candidate_id=c.id OR a.detail->'candidateIds' @> jsonb_build_array(c.id)
+    WHERE c.discovery_key='discovery-4' AND a.kind='test-shared-open' AND a.reviewed_at IS NULL
+  ) THEN
+    RAISE EXCEPTION 'Un candidat référencé dans une anomalie partagée a été purgé';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM product_identity_anomalies WHERE kind='test-archive'
+  ) THEN
+    RAISE EXCEPTION 'L''anomalie revue n''a pas été archivée';
+  END IF;
+END $$;
+
+ROLLBACK;
+
+SELECT 'Validation identité : OK (données annulées par ROLLBACK).' AS result;

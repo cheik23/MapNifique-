@@ -1,0 +1,60 @@
+\set ON_ERROR_STOP on
+
+-- Une identity_key NULL est attendue en version 1 avant la réconciliation.
+-- Après version 2, la même situation doit être signalée comme bloquante.
+BEGIN;
+
+DO $$
+DECLARE v_product_id BIGINT;
+DECLARE v_invalid_product_id BIGINT;
+DECLARE v_issue_count INTEGER;
+BEGIN
+  IF (SELECT version FROM schema_state WHERE singleton) <> 1 THEN
+    RAISE EXCEPTION 'Ce test attend schema_state.version = 1.';
+  END IF;
+
+  INSERT INTO sources (id,name,base_url)
+  VALUES ('prompt26-reconcile-test','Prompt26 reconcile test','https://reconcile.example.test');
+
+  INSERT INTO products (source_id,product_url,gtin,name)
+  VALUES ('prompt26-reconcile-test','https://reconcile.example.test/p/1','4006381333931','Produit historique GTIN-13 sans clé')
+  RETURNING id INTO v_product_id;
+
+  INSERT INTO products (source_id,product_url,gtin,name)
+  VALUES ('prompt26-reconcile-test','https://reconcile.example.test/p/2','1234567890123','Produit historique GTIN invalide')
+  RETURNING id INTO v_invalid_product_id;
+
+  SELECT COUNT(*) INTO v_issue_count
+    FROM identity_data_problems() AS p(problem)
+   WHERE p.problem LIKE '%sans identity_key%';
+  IF v_issue_count <> 0 THEN
+    RAISE EXCEPTION 'Une identity_key NULL attendue en version 1 est signalée comme anomalie.';
+  END IF;
+
+  SELECT COUNT(*) INTO v_issue_count
+    FROM identity_data_problems() AS p(problem)
+   WHERE p.problem LIKE '%' || v_invalid_product_id::text || '%GTIN%';
+  IF v_issue_count <> 1 THEN
+    RAISE EXCEPTION 'Un GTIN historiquement invalide doit être signalé avant la réconciliation.';
+  END IF;
+
+  SELECT COUNT(*) INTO v_issue_count
+    FROM identity_data_problems() AS p(problem)
+   WHERE p.problem LIKE '%' || v_product_id::text || '%GTIN%';
+  IF v_issue_count <> 0 THEN
+    RAISE EXCEPTION 'Un GTIN-13 valide doit être accepté en version 1 et normalisé pendant la réconciliation.';
+  END IF;
+
+  UPDATE schema_state SET version=2 WHERE singleton;
+
+  SELECT COUNT(*) INTO v_issue_count
+    FROM identity_data_problems() AS p(problem)
+   WHERE p.problem LIKE '%sans identity_key%';
+  IF v_issue_count <> 2 THEN
+    RAISE EXCEPTION 'En version 2, les deux identity_key NULL doivent être signalées.';
+  END IF;
+END $$;
+
+ROLLBACK;
+SELECT 'IDENTITY_RECONCILE_PREFLIGHT_OK' AS validation,
+       'identity_key NULL autorisée en v1 et bloquée en v2' AS detail;

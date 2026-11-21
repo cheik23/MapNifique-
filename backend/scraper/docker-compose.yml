@@ -1,0 +1,100 @@
+services:
+  db:
+    image: postgis/postgis:17-3.6-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mapnifique_scraper}
+      POSTGRES_USER: ${POSTGRES_USER:-mapnifique}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mapnifique} -d ${POSTGRES_DB:-mapnifique_scraper}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [internal]
+
+  api:
+    build: .
+    restart: unless-stopped
+    command: ["npm", "run", "start:api"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      HOST: 0.0.0.0
+      PORT: 8787
+      PHOTON_URL: "${PHOTON_URL:-https://photon.komoot.io}"
+    ports:
+      - "127.0.0.1:8787:8787"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+
+  worker:
+    build: .
+    restart: unless-stopped
+    command: ["npm", "run", "start:worker"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      DEFAULT_MAX_CONCURRENCY: ${DEFAULT_MAX_CONCURRENCY:-2}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+    stop_grace_period: 2m
+    # Un seul worker au départ. On augmentera après mesure de la RAM et des sites.
+
+  offers-worker:
+    build: .
+    restart: unless-stopped
+    command: ["node", "src/offers-worker.js"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      OFFERS_INTERVAL_HOURS: ${OFFERS_INTERVAL_HOURS:-6}
+      OFFERS_ENABLED_SOURCES: ${OFFERS_ENABLED_SOURCES:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+    stop_grace_period: 2m
+
+
+  osm-sync:
+    profiles: [osm-sync]
+    image: iboates/osm2pgsql:2.3.1
+    restart: unless-stopped
+    user: "1000:1000"
+    entrypoint: ["/bin/sh", "/run/mapnifique/osm-sync-loop.sh"]
+    environment:
+      PGPASSFILE: /run/secrets/osm-sync.pgpass
+      OSM_SYNC_DATABASE: ${POSTGRES_DB:-mapnifique_scraper}
+      OSM_SYNC_USER: ${POSTGRES_USER:-mapnifique}
+      OSM_SYNC_HOST: db
+      OSM_SYNC_PORT: "5432"
+      OSM_SYNC_INTERVAL_SECONDS: "86400"
+      OSM_SYNC_RETRY_SECONDS: "1800"
+    volumes:
+      - ./scripts/osm-sync-loop.sh:/run/mapnifique/osm-sync-loop.sh:ro
+      - ${MAPNIFIQUE_DATA_DIR:-./data}/osm-pilot.lua:/data/osm-pilot.lua:ro
+      - ${MAPNIFIQUE_DATA_DIR:-./data}/osm-sync.pgpass:/run/secrets/osm-sync.pgpass:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+    stop_grace_period: 2m
+
+networks:
+  internal:
+    driver: bridge
+volumes:
+  postgres_data:

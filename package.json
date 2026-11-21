@@ -1,18 +1,21 @@
 {
   "name": "mapnifique",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
+  "version": "1.0.0",
+  "description": "Monorepo MapNifique: frontend principal et backend scraper",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "devDependencies": {
-    "vite": "^8.3.4"
-  },
-  "dependencies": {
-    "html5-qrcode": "^2.3.8",
-    "leaflet": "^1.9.4"
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "lint": "npm --prefix frontend run lint",
+    "check:backend": "npm --prefix backend/scraper run check",
+    "test:backend": "npm --prefix backend/scraper test",
+    "verify": "npm run lint && npm run check:backend && npm run test:backend && npm run test:frontend && npm run build",
+    "test:frontend": "npm --prefix frontend run test:unit",
+    "audit:deps": "bash scripts/security-audit.sh",
+    "verify:full": "bash scripts/verify-workspace.sh",
+    "audit:deps:summary": "node scripts/summarize-security-audit.mjs",
+    "verify:release": "npm run verify && npm --prefix backend/scraper run test:postgres:prompt26",
+    "preview": "npm --prefix frontend run preview",
+    "publish:github": "bash scripts/publish-github-branch.sh"
   }
 }

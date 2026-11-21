@@ -1,0 +1,11 @@
+node_modules/
+.env
+data/
+.crawlee/
+storage/
+backups/
+*.log
+
+!data/
+data/*
+!data/.gitkeep

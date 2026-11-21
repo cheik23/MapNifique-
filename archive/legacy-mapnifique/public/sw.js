@@ -4,7 +4,7 @@
 //   - Tuiles OpenStreetMap : cache-first (fallback tuile grise)
 //   - API Open Food Facts : network-first (fallback cache, puis JSON "hors-ligne")
 // ⬇ Version incrémentée pour forcer la mise à jour des clients
-const CACHE_NAME = 'mapnifique-v18';
+const CACHE_NAME = 'mapnifique-v19';
 const TILES_CACHE_NAME = 'monapp-tiles-v8';
 const API_CACHE_NAME = 'monapp-api-v8';
 
