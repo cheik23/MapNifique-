@@ -2608,7 +2608,7 @@ function App() {
               <MapLibreView
                 center={mapCenter}
                 recenterRequest={mapRecenterRequest}
-                places={selectedPlace ? [selectedPlace] : visiblePlaces}
+                places={visiblePlaces}
                 selectedId={selectedId}
                 onSelect={selectPlace}
                 fitPlaces={Boolean(query.trim() && visiblePlaces.length > 0)}
@@ -2682,7 +2682,7 @@ function App() {
             )}
 
             <MapPlaceLayer
-              places={selectedPlace ? [selectedPlace] : visiblePlaces}
+              places={visiblePlaces}
               selectedId={selectedId}
               onSelect={selectPlace}
             />

@@ -10,14 +10,6 @@ pool.on('error', (error) => {
   console.error(`[neon-function:db] Idle PostgreSQL client dropped (${code}); pool will reconnect on demand.`);
 });
 
-// Neon may evict idle PostgreSQL connections when a branch scales to zero.
-// node-postgres emits an error for an idle client; handle it so it cannot crash
-// the function isolate. Pool will discard the stale client and reconnect on demand.
-pool.on('error', (error) => {
-  const code = typeof error?.code === 'string' ? error.code : 'UNKNOWN';
-  console.error(`[neon-function:db] Idle PostgreSQL client dropped (${code}); pool will reconnect on demand.`);
-});
-
 let appPromise;
 
 async function getApp() {

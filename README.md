@@ -1,6 +1,6 @@
 # MapNifique
 
-MapNifique is a geolocated discovery app for nearby shops, services and verified promotions. This private repository, `cheik23/MapNifique`, is the project's single source of truth on branch `main`.
+MapNifique is a geolocated discovery app for nearby shops, services and verified promotions. This public repository, `cheik23/MapNifique-`, is the project's single source of truth on branch `main`.
 
 ## Repository layout
 

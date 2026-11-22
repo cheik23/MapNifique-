@@ -17,7 +17,87 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
+  backend:
+    name: Backend (syntax and unit tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: backend/scraper/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci --prefix backend/scraper --no-audit --no-fund
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
+      - name: Check backend syntax
+        run: npm run check:backend
+
+      - name: Run backend tests
+        run: npm run test:backend
+
+  frontend:
+    name: Frontend (tests, lint and build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend --no-audit --no-fund
+
+      - name: Run frontend unit tests
+        run: npm --prefix frontend run test:unit
+
+      - name: Lint frontend
+        run: npm --prefix frontend run lint
+
+      - name: Build frontend
+        run: npm --prefix frontend run build
+
+  security-audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+
+      - name: Install backend dependencies
+        run: npm ci --prefix backend/scraper --ignore-scripts --no-audit --no-fund
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend --ignore-scripts --no-audit --no-fund
+
+      - name: Audit backend and frontend dependencies
+        run: |
+          status=0
+          npm audit --prefix backend/scraper --audit-level=moderate || status=1
+          npm audit --prefix frontend --audit-level=moderate || status=1
+          exit "$status"
+
+  postgres:
+    name: PostgreSQL disposable integration
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -29,38 +109,12 @@ jobs:
         with:
           node-version: 22.x
           cache: npm
-          cache-dependency-path: |
-            backend/scraper/package-lock.json
-            frontend/package-lock.json
+          cache-dependency-path: backend/scraper/package-lock.json
 
       - name: Install backend dependencies
-        run: npm ci --prefix backend/scraper
+        run: npm ci --prefix backend/scraper --no-audit --no-fund
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
 
-      - name: Check backend syntax
-        run: npm run check:backend
-
-      - name: Run backend tests
-        run: npm run test:backend
-
-      - name: Install frontend dependencies
-        run: npm ci --prefix frontend
-
-      - name: Audit backend dependencies
-        run: npm audit --prefix backend/scraper --audit-level=moderate
-
-      - name: Audit frontend dependencies
-        run: npm audit --prefix frontend --audit-level=moderate
-
-      - name: Run frontend unit tests
-        run: npm run test:unit --prefix frontend
-
-      - name: Lint frontend
-        run: npm run lint --prefix frontend
-
-      - name: Build frontend
-        run: npm run build --prefix frontend
-
-      - name: Validate PostgreSQL migrations, concurrency and backup/restore
+      - name: Validate migrations, concurrency and backup/restore
         run: npm --prefix backend/scraper run test:postgres:prompt26

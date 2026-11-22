@@ -10,6 +10,7 @@ fail() { printf 'ERREUR: %s\n' "$*" >&2; exit 1; }
 command -v npm >/dev/null 2>&1 || fail "npm est requis."
 command -v node >/dev/null 2>&1 || fail "Node.js est requis."
 [[ -f "$BACKEND/package.json" && -f "$BACKEND/package-lock.json" ]] || fail "Workspace backend incomplet."
+[[ -f "$BACKEND/functions/api.js" ]] || fail "Fonction Neon absente du workspace backend."
 
 cleanup() {
   if [[ "$SUCCESS" -eq 1 ]]; then
@@ -21,11 +22,12 @@ cleanup() {
 trap cleanup EXIT
 
 printf 'Essai isolé minimatch 11.x\nBackend source : %s\nDossier temporaire : %s\n' "$BACKEND" "$TRIAL"
-mkdir -p "$TRIAL/src" "$TRIAL/scripts" "$TRIAL/migrations"
+mkdir -p "$TRIAL/src" "$TRIAL/scripts" "$TRIAL/migrations" "$TRIAL/functions"
 cp "$BACKEND/package.json" "$BACKEND/package-lock.json" "$TRIAL/"
 cp -a "$BACKEND/src/." "$TRIAL/src/"
 cp -a "$BACKEND/scripts/." "$TRIAL/scripts/"
 cp -a "$BACKEND/migrations/." "$TRIAL/migrations/"
+cp -a "$BACKEND/functions/." "$TRIAL/functions/"
 
 node --input-type=commonjs - "$TRIAL/package.json" <<'NODE'
 const fs = require('node:fs');
