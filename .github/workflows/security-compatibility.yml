@@ -1,0 +1,60 @@
+name: MapNifique dependency compatibility
+
+on:
+  push:
+    branches:
+      - main
+      - "work/**"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-compatibility-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  minimatch-compatibility:
+    name: Isolated minimatch 11 override
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: backend/scraper/package-lock.json
+
+      - name: Test the isolated minimatch 11 override against Crawlee
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: npm run test:security:minimatch
+
+      - name: Verify the tested override was applied to the backend manifests
+        run: |
+          node --input-type=commonjs <<'NODE'
+          const fs = require('node:fs');
+          const pkg = JSON.parse(fs.readFileSync('backend/scraper/package.json', 'utf8'));
+          const lock = JSON.parse(fs.readFileSync('backend/scraper/package-lock.json', 'utf8'));
+          const override = pkg.overrides?.minimatch;
+          if (typeof override !== 'string' || !/^\^?11\./.test(override)) {
+            console.error(`Override minimatch absent ou inattendu : ${override ?? 'aucun'}`);
+            process.exit(1);
+          }
+          const versions = Object.entries(lock.packages || {})
+            .filter(([path]) => path.endsWith('/node_modules/minimatch') || path === 'node_modules/minimatch')
+            .map(([, value]) => value.version);
+          const unique = [...new Set(versions)];
+          if (unique.length !== 1 || !/^11\./.test(unique[0] || '')) {
+            console.error(`Versions minimatch du lockfile : ${unique.join(', ') || 'aucune'}`);
+            process.exit(1);
+          }
+          console.log(`MINIMATCH_OVERRIDE_APPLIED=${override} LOCKED=${unique[0]}`);
+          NODE

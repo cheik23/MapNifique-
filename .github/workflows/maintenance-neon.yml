@@ -1,0 +1,45 @@
+name: MapNifique daily offers retention (free)
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  retention:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check whether the free Neon database secret is configured
+        id: preflight
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          if [[ -z "$DATABASE_URL" ]]; then
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            echo 'NEON_DATABASE_URL absent : maintenance ignorée sans erreur.'
+          else
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.preflight.outputs.ready == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.preflight.outputs.ready == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/scraper/package-lock.json
+      - name: Install backend dependencies
+        if: steps.preflight.outputs.ready == 'true'
+        run: npm ci --prefix backend/scraper
+      - name: Expire and purge offers using Europe/Paris dates
+        if: steps.preflight.outputs.ready == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          OFFERS_ONCE: '1'
+          OFFERS_ENABLED_SOURCES: ''
+          OFFERS_SOURCE_LICENSE_APPROVED: 'false'
+        run: npm --prefix backend/scraper run offers:once

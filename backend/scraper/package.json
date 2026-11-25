@@ -1,0 +1,32 @@
+{
+  "name": "mapnifique-scraper-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start:api": "node src/server.js",
+    "start:worker": "node src/worker.js",
+    "check": "node --check scripts/check-crawl-queue.js && node --check src/worker-queue.test.js && node --check src/worker-queue.js && node --check src/app.js && node --check src/server.js && node --check functions/api.js && node --check src/worker.js && node --check src/crawler.js && node --check src/crawler-control.js && node --check src/crawler.test.js && node --check src/extract.js && node --check src/identity.js && node --check src/stage.js && node --check src/db.js && node --check src/offers-worker.js && node --check src/security.js && node --check src/offer-validity.js && node --check scripts/reconcile-product-identity.js && node --check src/health.js && node --check src/offers-sync.js && node --check src/health.test.js && node --check src/offers-sync.test.js && node --check src/start-script.test.js && node --check src/source-admin.js && node --check src/source-admin.test.js && node --check src/places-api.test.js && node --check src/robots-policy.js && node --check src/robots-policy.test.js && node --check src/numeric.js && node --check src/numeric.test.js && node --check src/url-policy.js && node --check src/url-policy.test.js",
+    "test": "node --test src/*.test.js",
+    "test:identity": "node --test src/identity.test.js src/extract.test.js src/stage.test.js",
+    "reconcile:audit": "node scripts/reconcile-product-identity.js --audit",
+    "reconcile:execute": "node scripts/reconcile-product-identity.js --execute",
+    "test:postgres:prompt26": "bash scripts/test-prompt26-postgres.sh",
+    "offers:once": "node src/offers-worker.js",
+    "start:worker:once": "WORKER_RUN_ONCE=1 node src/worker.js"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.4.3",
+    "crawlee": "^3.18.2",
+    "dotenv": "^16.6.1",
+    "fastify": "^5.12.8",
+    "pg": "^8.16.3",
+    "playwright": "1.65.0"
+  },
+  "overrides": {
+    "minimatch": "^11.0.1"
+  }
+}

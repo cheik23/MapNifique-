@@ -1,0 +1,53 @@
+name: MapNifique encrypted weekly database backup (free)
+
+on:
+  schedule:
+    - cron: '31 3 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check backup credentials (do nothing until configured)
+        id: preflight
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          AGE_RECIPIENT: ${{ secrets.AGE_RECIPIENT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.NEON_BACKUP_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.NEON_BACKUP_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL_S3: ${{ secrets.NEON_BACKUP_ENDPOINT }}
+          AWS_REGION: ${{ secrets.NEON_BACKUP_REGION }}
+          AWS_S3_BUCKET: ${{ secrets.NEON_BACKUP_BUCKET }}
+        run: |
+          for name in DATABASE_URL AGE_RECIPIENT AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_ENDPOINT_URL_S3 AWS_REGION AWS_S3_BUCKET; do
+            if [[ -z "${!name}" ]]; then
+              echo "ready=false" >> "$GITHUB_OUTPUT"
+              echo "Sauvegarde ignorée : secret $name absent. Aucun coût généré."
+              exit 0
+            fi
+          done
+          echo 'ready=true' >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        if: steps.preflight.outputs.ready == 'true'
+      - name: Install age and AWS CLI
+        if: steps.preflight.outputs.ready == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y age awscli
+      - name: Dump, encrypt, upload and retain four weekly copies
+        if: steps.preflight.outputs.ready == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          AGE_RECIPIENT: ${{ secrets.AGE_RECIPIENT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.NEON_BACKUP_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.NEON_BACKUP_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL_S3: ${{ secrets.NEON_BACKUP_ENDPOINT }}
+          AWS_REGION: ${{ secrets.NEON_BACKUP_REGION }}
+          AWS_S3_BUCKET: ${{ secrets.NEON_BACKUP_BUCKET }}
+          MAX_DUMP_BYTES: '900000000'
+        run: bash scripts/backup-neon.sh

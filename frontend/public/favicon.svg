@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<title>MapNifique</title>
+<rect x="1" y="1" width="62" height="62" rx="18" fill="#18392E"/>
+<rect x="4.5" y="4.5" width="55" height="55" rx="15" fill="none" stroke="#B99B68" stroke-width="1"/>
+<path d="M32 7.5C20.4 7.5 11 16.9 11 28.5 11 42.4 32 57 32 57s21-14.6 21-28.5C53 16.9 43.6 7.5 32 7.5Z"
+ fill="none" stroke="#F4EFE3" stroke-width="1.8" stroke-linejoin="round"/>
+<path d="M19 36V21.5L32 32l13-10.5V36"
+ fill="none" stroke="#D1B47E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="32" cy="15.5" r="2" fill="#D1B47E"/>
+</svg>

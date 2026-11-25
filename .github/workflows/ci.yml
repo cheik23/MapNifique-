@@ -1,0 +1,162 @@
+name: MapNifique CI
+
+on:
+  push:
+    branches:
+      - main
+      - "work/**"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (syntax and unit tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: backend/scraper/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci --prefix backend/scraper --no-audit --no-fund
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
+      - name: Check backend syntax
+        run: npm run check:backend
+
+      - name: Run backend tests
+        run: npm run test:backend
+
+  frontend:
+    name: Frontend (tests, lint and build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend --no-audit --no-fund
+
+      - name: Run frontend unit tests
+        run: npm --prefix frontend run test:unit
+
+      - name: Lint frontend
+        run: npm --prefix frontend run lint
+
+      - name: Build frontend
+        run: npm --prefix frontend run build
+
+  security-audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+
+      - name: Install backend dependencies
+        run: npm ci --prefix backend/scraper --ignore-scripts --no-audit --no-fund
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend --ignore-scripts --no-audit --no-fund
+
+      - name: Audit backend and frontend dependencies
+        run: |
+          status=0
+          npm audit --prefix backend/scraper --audit-level=moderate || status=1
+          npm audit --prefix frontend --audit-level=moderate || status=1
+          exit "$status"
+
+  postgres:
+    name: PostgreSQL disposable integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: backend/scraper/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci --prefix backend/scraper --no-audit --no-fund
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
+      - name: Validate migrations, concurrency and backup/restore
+        run: npm --prefix backend/scraper run test:postgres:prompt26
+
+  map-regression:
+    name: Map regression (browser, MapLibre and Leaflet)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend --no-audit --no-fund
+
+      - name: Cache Playwright Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-1.65.0
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: frontend
+
+      - name: Run map regression tests
+        run: npm run test:e2e
+        working-directory: frontend
+
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          retention-days: 7
