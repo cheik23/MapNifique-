@@ -14,14 +14,14 @@ EXISTING="$(docker run --rm -e DATABASE_URL="$DATABASE_URL" postgres:17-alpine \
 MIGRATIONS="$ROOT/backend/scraper/migrations"
 docker run --rm -e DATABASE_URL="$DATABASE_URL" -v "$MIGRATIONS:/migrations:ro" 
  postgres:17-alpine sh -ec '
-    for file in \
-      /migrations/20261120_000_baseline_schema.sql \
-      /migrations/20261120_001_product_identity.sql \
-      /migrations/20261120_002_places_offers.sql \
-      /migrations/20261120_003_identity_reconcile_preflight.sql; do
-      echo "--- $file ---"
-      psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f "$file"
-    done
+  for file in \
+    /migrations/20261120_000_baseline_schema.sql \
+    /migrations/20261120_001_product_identity.sql \
+    /migrations/20261120_002_places_offers.sql \
+    /migrations/20261120_003_identity_reconcile_preflight.sql; do
+    echo "--- $file ---"
+    psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f "$file"
+  done
   '
 
  pm --prefix "$ROOT/backend/scraper" ci
