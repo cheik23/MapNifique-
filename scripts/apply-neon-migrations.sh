@@ -3,7 +3,7 @@ set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 : "${DATABASE_URL:?DATABASE_URL requis (connexion Neon directe)}"
 command -v docker >/dev/null 2>&1 || { echo 'Docker requis pour utiliser psql 17 dans le conteneur officiel.' >&2; exit 2; }
-command -v ode >/dev/null 2>&1 || { echo 'Node.js requis.' >&2; exit 2; }
+command -v node >/dev/null 2>&1 || { echo 'Node.js requis.' >&2; exit 2; }
 
 # Refuse toute base dont le schéma public contient déjà une relation : ce script
 # ne sert qu'au premier déploiement sur une base réellement vide.
