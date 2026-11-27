@@ -4,9 +4,12 @@ on:
   push:
     branches:
       - work/neon-empty-schema-safety-20261127
+      - main
     paths:
       - 'backend/scraper/**'
       - '.github/workflows/neon-function-bundle.yml'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:

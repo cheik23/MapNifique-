@@ -12,16 +12,30 @@ cat > "$TMP_DIR/check-empty.sql" <<'SQL'
 SELECT count(*) = 0
 FROM pg_class c
 JOIN pg_namespace n ON n.oid=c.relnamespace
-WHERE n.nspname = 'public' AND c.relkind IN ('r','p','v','m','S','f');
+LEFT JOIN pg_depend d
+  ON d.classid = 'pg_class'::regclass
+ AND d.objid = c.oid
+ AND d.refclassid = 'pg_extension'::regclass
+ AND d.deptype = 'e'
+LEFT JOIN pg_extension e ON e.oid = d.refobjid
+WHERE n.nspname='public'
+  AND c.relkind IN ('r','p','v','m','S','f')
+  AND e.oid IS NULL;
 SQL
 EMPTY="$(docker run --rm -e RESTORE_DATABASE_URL="$RESTORE_DATABASE_URL" -v "$TMP_DIR:/backup:ro" \
   postgres:17-alpine psql "$RESTORE_DATABASE_URL" -XAtq -f /backup/check-empty.sql)"
-[[ "$EMPTY" == 't' ]] || { echo 'Refus : la base cible n’est pas vide. Aucune donnée écrasée.' >&2; exit 3; }
+if [[ "$EMPTY" != 't' ]]; then
+  echo 'Refus : la base cible n’est pas vide. Aucune donnée écrasée.' >&2
+  exit 3
+fi
 docker run --rm -e RESTORE_DATABASE_URL="$RESTORE_DATABASE_URL" -v "$TMP_DIR:/backup:ro" \
   postgres:17-alpine pg_restore --exit-on-error --no-owner --no-acl \
   --dbname="$RESTORE_DATABASE_URL" /backup/restore.dump
 VERSION="$(docker run --rm -e RESTORE_DATABASE_URL="$RESTORE_DATABASE_URL" postgres:17-alpine \
   psql "$RESTORE_DATABASE_URL" -XAtqc 'SELECT version FROM schema_state LIMIT 1')"
-[[ "$VERSION" == '2' ]] || { echo "Schéma attendu v2, trouvé $VERSION" >&2; exit 4; }
+if [[ "$VERSION" != '2' ]]; then
+  echo "Schéma attendu v2, trouvé $VERSION" >&2
+  exit 4
+fi
 echo 'RESTORE_SCHEMA_VERSION=2'
 echo 'RESTORE_NEON_BACKUP=PASS'
