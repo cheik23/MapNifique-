@@ -12,7 +12,7 @@ cat > "$TMP_DIR/check-empty.sql" <<'SQL'
 SELECT count(*) = 0
 FROM pg_class c
 JOIN pg_namespace n ON n.oid=c.relnamespace
-WHERE n.nspname = 'public' AND c.relkind IN ('r','v','m','S','f');
+WHERE n.nspname = 'public' AND c.relkind IN ('r','p','v','m','S','f');
 SQL
 EMPTY="$(docker run --rm -e RESTORE_DATABASE_URL="$RESTORE_DATABASE_URL" -v "$TMP_DIR:/backup:ro" \
   postgres:17-alpine psql "$RESTORE_DATABASE_URL" -XAtq -f /backup/check-empty.sql)"
