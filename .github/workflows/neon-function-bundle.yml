@@ -1,0 +1,47 @@
+name: MapNifique Neon Function bundle (Node.js 24)
+
+on:
+  push:
+    branches:
+      - work/neon-empty-schema-safety-20261127
+      - main
+    paths:
+      - 'backend/scraper/**'
+      - '.github/workflows/neon-function-bundle.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bundle-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/scraper/package-lock.json
+      - name: Install backend dependencies without browser downloads
+        run: npm ci --prefix backend/scraper --ignore-scripts --no-audit --no-fund
+      - name: Bundle Neon Function as ESM for Node.js 24
+        run: |
+          mkdir -p dist/neon-function
+          npx --yes esbuild@0.28.2 backend/scraper/functions/api.js \
+            --bundle --platform=node --target=node24 --format=esm \
+            --banner:js="import{createRequire as ___cr}from'module';import{fileURLToPath as ___f}from'url';import{dirname as ___d}from'path';const require=___cr(import.meta.url);const __filename=___f(import.meta.url);const __dirname=___d(__filename);" \
+            --outfile=dist/neon-function/index.mjs
+          cd dist/neon-function
+          zip -q ../mapnifique-neon-api.zip index.mjs
+          unzip -t ../mapnifique-neon-api.zip
+          unzip -l ../mapnifique-neon-api.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mapnifique-neon-api-${{ github.sha }}
+          path: dist/mapnifique-neon-api.zip
+          if-no-files-found: error
+          retention-days: 7

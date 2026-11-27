@@ -144,8 +144,19 @@ jobs:
           key: playwright-chromium-${{ runner.os }}-1.65.0
 
       - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+        # Le depot apt du runner peut echouer de facon transitoire (fetch
+        # packages.microsoft.com, exit 100) : trois tentatives espacees.
         working-directory: frontend
+        run: |
+          for attempt in 1 2 3; do
+            if npx playwright install --with-deps chromium; then
+              exit 0
+            fi
+            echo "Tentative $attempt echouee ; nouvelle tentative dans 20 s"
+            sleep 20
+          done
+          echo 'Installation Chromium impossible ap trois tentatives.'
+          exit 1
 
       - name: Run map regression tests
         run: npm run test:e2e

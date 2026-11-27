@@ -26,7 +26,7 @@ bash scripts/apply-neon-migrations.sh
 unset DATABASE_URL
 ```
 
-Le script refuse toute base qui contient déjà `schema_state`. Il applique les migrations 000 à 003, exécute l'audit/réconciliation d'identité et exige le schéma v2. Ne l'utilise pas pour mettre à jour une base existante.
+Le script refuse toute base dont le schéma `public` contient déjà une relation (table ordinaire ou partitionnée, vue, vue matérialisée, séquence ou table étrangère), même si `schema_state` est absent. Il applique les migrations 000 à 003, exécute l'audit/réconciliation d'identité et exige le schéma v2. Ne l'utilise pas pour mettre à jour une base existante.
 
 ## 3. Déployer l'API Neon Function
 
